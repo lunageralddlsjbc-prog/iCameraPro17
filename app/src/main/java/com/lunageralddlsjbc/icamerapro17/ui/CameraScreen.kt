@@ -37,7 +37,6 @@ fun CameraScreen() {
     var flashOn by remember { mutableStateOf(false) }
     
     // Pro Mode State
-    var isoValue by remember { mutableStateOf(100) }
     var exposureComp by remember { mutableStateOf(0) }
     
     var previewViewRef by remember { mutableStateOf<androidx.camera.view.PreviewView?>(null) }
@@ -71,7 +70,8 @@ fun CameraScreen() {
                     .setFlashMode(if (flashOn) ImageCapture.FLASH_MODE_ON else ImageCapture.FLASH_MODE_OFF)
                     .build()
                 
-                videoCapture = VideoCapture.Builder(Recorder.builder().build()).build()
+                // FIXED: Use Recorder() directly instead of Recorder.builder().build()
+                videoCapture = VideoCapture.Builder(Recorder()).build()
                 
                 camera = when (captureMode) {
                     CaptureMode.VIDEO -> cameraProvider.bindToLifecycle(
@@ -86,8 +86,6 @@ fun CameraScreen() {
                 if (captureMode == CaptureMode.PRO) {
                     camera?.cameraControl?.apply {
                         setExposureCompensationIndex(exposureComp)
-                        // ISO manual control requires MANUAL_SENSOR capability
-                        // Applied here as baseline; hardware detection refines later
                     }
                 }
                 
@@ -193,18 +191,6 @@ fun CameraScreen() {
                                 activeTrackColor = Color.White
                             )
                         )
-                        
-                        Text("ISO (Base): $isoValue", color = Color.White)
-                        Slider(
-                            value = isoValue.toFloat(),
-                            onValueChange = { isoValue = it.toInt() },
-                            valueRange = 100f..3200f,
-                            steps = 31,
-                            colors = SliderDefaults.colors(
-                                thumbColor = Color.White,
-                                activeTrackColor = Color.White
-                            )
-                        )
                     }
                 }
             }
@@ -254,27 +240,23 @@ private fun startRecording(
     onStarted: (Recording) -> Unit
 ) {
     val capture = videoCapture ?: return
+    
+    // FIXED: Use FileOutputOptions for CameraX 1.4.1
     val videoFile = File(
         context.getExternalFilesDir(null),
         "VID_${SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())}.mp4"
     )
     
-    val outputFileOptions = MediaStoreOutputOptions.Builder(
-        context.contentResolver,
-        android.provider.MediaStore.Video.Media.EXTERNAL_CONTENT_URI
-    ).setContentValues(
-        android.content.ContentValues().apply {
-            put(android.provider.MediaStore.Video.Media.DISPLAY_NAME, videoFile.name)
-        }
-    ).build()
+    val outputFileOptions = FileOutputOptions.Builder(videoFile).build()
     
+    // FIXED: Use prepareRecording with FileOutputOptions and correct listener syntax
     val recording = capture.output.prepareRecording(context, outputFileOptions)
         .withAudioEnabled()
         .start(executor) { event ->
             when (event) {
                 is VideoRecordEvent.Start -> Log.d("Camera", "Recording started")
-                is VideoRecordEvent.Finalize -> Log.d("Camera", "Recording finalized: ${event.outputResults.outputUri}")
-                is VideoRecordEvent.Status -> Log.d("Camera", "Recording status: ${event.recordingStatus}")
+                is VideoRecordEvent.Finalize -> Log.d("Camera", "Recording finalized")
+                is VideoRecordEvent.Status -> Log.d("Camera", "Recording status update")
             }
         }
     
