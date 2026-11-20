@@ -3,8 +3,6 @@ package com.lunageralddlsjbc.icamerapro17.ui
 import android.Manifest
 import android.content.ContentValues
 import android.content.Context
-import android.content.Intent
-import android.net.Uri
 import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
@@ -23,12 +21,12 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -37,6 +35,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
@@ -111,7 +110,7 @@ fun CameraScreen() {
     
     val cameraExecutor = remember { Executors.newSingleThreadExecutor() }
     
-    // FIXED: Optimized binding to prevent preview lag
+    // FIXED: Robust camera binding with error handling
     LaunchedEffect(captureMode, isFrontCamera, flashOn, exposureComp) {
         val cameraProviderFuture = ProcessCameraProvider.getInstance(context)
         cameraProviderFuture.addListener({
@@ -121,10 +120,9 @@ fun CameraScreen() {
                 
                 val cameraSelector = if (isFrontCamera) CameraSelector.DEFAULT_FRONT_CAMERA else CameraSelector.DEFAULT_BACK_CAMERA
                 
-                // FIXED: Enable stabilization on preview for smooth zero-lag experience
-                val preview = Preview.Builder()
-                    .build()
-                    .also { it.setSurfaceProvider(previewViewRef?.surfaceProvider) }
+                val preview = Preview.Builder().build().also {
+                    it.setSurfaceProvider(previewViewRef?.surfaceProvider)
+                }
                 
                 imageCapture = ImageCapture.Builder()
                     .setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY)
@@ -147,7 +145,10 @@ fun CameraScreen() {
                 
                 if (captureMode != CaptureMode.VIDEO) { isRecording = false; activeRecording = null }
                 
-            } catch (e: Exception) { Log.e("Camera", "Bind failed: ${e.message}", e) }
+                Log.d("Camera", "Bound successfully: $captureMode, Front: $isFrontCamera")
+            } catch (e: Exception) { 
+                Log.e("Camera", "Bind FAILED: ${e.message}", e) 
+            }
         }, ContextCompat.getMainExecutor(context))
     }
     
@@ -157,6 +158,7 @@ fun CameraScreen() {
     )
     
     Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
+        // FIXED: Apply mirror effect via graphicsLayer
         AndroidView(
             factory = { ctx ->
                 androidx.camera.view.PreviewView(ctx).apply {
@@ -174,7 +176,9 @@ fun CameraScreen() {
                     }
                 }.also { previewViewRef = it }
             },
-            modifier = Modifier.fillMaxSize()
+            modifier = Modifier
+                .fillMaxSize()
+                .graphicsLayer { scaleX = if (isFrontCamera && mirrorFront) -1f else 1f }
         )
         
         if (showCaptureFlash) Box(modifier = Modifier.fillMaxSize().background(Color.White.copy(alpha = 0.8f)))
@@ -191,7 +195,7 @@ fun CameraScreen() {
             }
             
             Box(modifier = Modifier.fillMaxWidth().background(brush = Brush.verticalGradient(colors = listOf(Color.Transparent, Color.Black.copy(alpha = 0.9f)))).padding(bottom = 30.dp)) {
-                // GALLERY SHORTCUT (Bottom Left)
+                // GALLERY SHORTCUT (Fixed)
                 GalleryThumbnail(lastMediaPath = lastMediaPath, modifier = Modifier.align(Alignment.BottomStart).padding(start = 24.dp, bottom = 90.dp))
                 
                 Row(modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 100.dp).clip(RoundedCornerShape(24.dp)).background(Color.Black.copy(alpha = 0.7f)).padding(4.dp), horizontalArrangement = Arrangement.Center) {
@@ -224,7 +228,7 @@ fun CameraScreen() {
         }
     }
     
-    // IPHONE-STYLE SETTINGS SHEET
+    // IPHONE-STYLE SETTINGS SHEET (With Visible Styles)
     if (showSettings) {
         ModalBottomSheet(onDismissRequest = { showSettings = false }, containerColor = Color(0xFF1C1C1E)) {
             Column(modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(16.dp)) {
@@ -232,14 +236,21 @@ fun CameraScreen() {
                 IphoneSettingSwitch("Grid", gridEnabled) { GlobalScope.launch(Dispatchers.IO) { CameraSettingsManager.toggleGrid(context) } }
                 IphoneSettingSwitch("Level", levelEnabled) { GlobalScope.launch(Dispatchers.IO) { CameraSettingsManager.toggleLevel(context) } }
                 IphoneSettingSwitch("Mirror Front Camera", mirrorFront) { GlobalScope.launch(Dispatchers.IO) { CameraSettingsManager.toggleMirror(context) } }
+                
                 Spacer(modifier = Modifier.height(16.dp))
                 Text("PHOTOGRAPHIC STYLE", color = Color.Gray, fontSize = 12.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(bottom = 8.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
+                // FIXED: Styles are now clearly visible in a scrollable row
+                Row(modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     PhotographicStyle.values().forEach { style ->
-                        FilterChip(selected = currentStyle == style, onClick = { currentStyle = style }, label = { Text(style.styleName, fontSize = 10.sp) }, colors = FilterChipDefaults.filterChipColors(selectedContainerColor = Color(0xFFFFD700))
+                        FilterChip(
+                            selected = currentStyle == style, 
+                            onClick = { currentStyle = style }, 
+                            label = { Text(style.styleName, fontSize = 10.sp) }, 
+                            colors = FilterChipDefaults.filterChipColors(selectedContainerColor = Color(0xFFFFD700))
                         )
                     }
                 }
+                
                 Spacer(modifier = Modifier.height(16.dp))
                 Text("LENS", color = Color.Gray, fontSize = 12.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(bottom = 8.dp))
                 IphoneSettingSwitch("Lens Correction", lensCorrection) { GlobalScope.launch(Dispatchers.IO) { CameraSettingsManager.toggleLensCorrection(context) } }

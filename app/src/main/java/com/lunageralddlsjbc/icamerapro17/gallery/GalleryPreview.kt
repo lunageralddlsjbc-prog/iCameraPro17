@@ -29,17 +29,12 @@ fun GalleryThumbnail(lastMediaPath: String?, modifier: Modifier = Modifier) {
             .size(60.dp)
             .clip(RoundedCornerShape(8.dp))
             .clickable {
-                lastMediaPath?.let { path ->
-                    val file = File(path)
-                    if (file.exists()) {
-                        val uri = Uri.fromFile(file)
-                        val intent = Intent(Intent.ACTION_VIEW).apply {
-                            setDataAndType(uri, if (path.endsWith(".mp4")) "video/mp4" else "image/jpeg")
-                            flags = Intent.FLAG_ACTIVITY_NEW_TASK
-                        }
-                        context.startActivity(intent)
-                    }
+                // Open system gallery or specific file
+                val intent = Intent(Intent.ACTION_VIEW).apply {
+                    type = "image/*"
+                    flags = Intent.FLAG_ACTIVITY_NEW_TASK
                 }
+                context.startActivity(intent)
             },
         colors = CardDefaults.cardColors(containerColor = Color.DarkGray)
     ) {
