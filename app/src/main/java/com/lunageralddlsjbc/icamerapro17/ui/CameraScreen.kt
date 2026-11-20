@@ -16,6 +16,7 @@ import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.video.*
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -72,7 +73,10 @@ fun CameraScreen() {
     var exposureComp by remember { mutableStateOf(0) }
     var isHdrEnabled by remember { mutableStateOf(true) }
     var lastMediaPath by remember { mutableStateOf<String?>(null) }
+    
+    // SHUTTER ANIMATION STATE
     var isShutterPressed by remember { mutableStateOf(false) }
+    var showCaptureFlash by remember { mutableStateOf(false) }
     
     val capabilities = remember { CapabilityManager.detect(context) }
     
@@ -99,7 +103,7 @@ fun CameraScreen() {
                 }
                 
                 imageCapture = ImageCapture.Builder()
-                    .setCaptureMode(ImageCapture.CAPTURE_MODE_MAXIMIZE_QUALITY)
+                    .setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY) // Faster shutter response
                     .setFlashMode(if (flashOn) ImageCapture.FLASH_MODE_ON else ImageCapture.FLASH_MODE_OFF)
                     .build()
                 
@@ -121,9 +125,15 @@ fun CameraScreen() {
         }, ContextCompat.getMainExecutor(context))
     }
     
-    val shutterScale by animateFloatAsState(targetValue = if (isShutterPressed) 0.85f else 1f, label = "shutter_scale")
+    // Spring animation for tactile shutter feel
+    val shutterScale by animateFloatAsState(
+        targetValue = if (isShutterPressed) 0.8f else 1f, 
+        animationSpec = spring(dampingRatio = 0.6f, stiffness = 300f),
+        label = "shutter_scale"
+    )
     
     Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
+        // Camera Preview
         AndroidView(
             factory = { ctx ->
                 androidx.camera.view.PreviewView(ctx).apply {
@@ -146,67 +156,160 @@ fun CameraScreen() {
             modifier = Modifier.fillMaxSize()
         )
         
+        // CAPTURE FLASH OVERLAY (White flash effect)
+        if (showCaptureFlash) {
+            Box(
+                modifier = Modifier.fillMaxSize().background(Color.White.copy(alpha = 0.8f)),
+                contentAlignment = Alignment.Center
+            )
+        }
+        
+        // IPHONE-STYLE UI OVERLAY
         Column(modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.SpaceBetween) {
-            Box(modifier = Modifier.fillMaxWidth().padding(top = 48.dp).background(brush = Brush.verticalGradient(colors = listOf(Color.Black.copy(alpha = 0.7f), Color.Transparent))).padding(vertical = 12.dp)) {
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
-                    SharpModeTab("PHOTO", captureMode == CaptureMode.PHOTO) { captureMode = CaptureMode.PHOTO; context.getSystemService(android.os.Vibrator::class.java)?.vibrate(10) }
-                    SharpModeTab("VIDEO", captureMode == CaptureMode.VIDEO) { captureMode = CaptureMode.VIDEO; context.getSystemService(android.os.Vibrator::class.java)?.vibrate(10) }
-                    if (capabilities.supportsManualExposure) SharpModeTab("PRO", captureMode == CaptureMode.PRO) { captureMode = CaptureMode.PRO; context.getSystemService(android.os.Vibrator::class.java)?.vibrate(10) }
-                }
-                
-                if (captureMode == CaptureMode.PHOTO) {
+            
+            // TOP BAR: Resolution Indicator + Quick Settings
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 50.dp, start = 16.dp, end = 16.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // Left: Format Indicator (Like "HEIC 48")
+                Card(
+                    shape = RoundedCornerShape(20.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color.Black.copy(alpha = 0.6f))
+                ) {
                     Text(
-                        text = if (isHdrEnabled) "HDR" else "HDR OFF",
-                        color = if (isHdrEnabled) Color(0xFFFFD700) else Color.Gray,
+                        text = if (isHdrEnabled) "HDR ON" else "STD",
+                        color = Color.White,
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Bold,
-                        modifier = Modifier.align(Alignment.TopEnd).padding(end = 16.dp).clickable { isHdrEnabled = !isHdrEnabled }
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
                     )
+                }
+                
+                // Right: Quick Toggles (Flash, Timer placeholder)
+                Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                    IconButton(onClick = { flashOn = !flashOn }) {
+                        Text(
+                            text = if (flashOn) "⚡" else "○",
+                            color = if (flashOn) Color(0xFFFFD700) else Color.White,
+                            fontSize = 20.sp
+                        )
+                    }
+                    // Placeholder for Timer/Live Photo to match iPhone layout
+                    IconButton(onClick = {}) {
+                        Text(text = "◑", color = Color.White, fontSize = 20.sp)
+                    }
                 }
             }
             
-            Box(modifier = Modifier.fillMaxWidth().background(brush = Brush.verticalGradient(colors = listOf(Color.Transparent, Color.Black.copy(alpha = 0.85f)))).padding(bottom = 40.dp, top = 10.dp)) {
+            // BOTTOM CONTROLS AREA
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(
+                        brush = Brush.verticalGradient(
+                            colors = listOf(Color.Transparent, Color.Black.copy(alpha = 0.9f))
+                        )
+                    )
+                    .padding(bottom = 30.dp)
+            ) {
+                // Gallery Thumbnail (Bottom Left)
                 GalleryThumbnail(
                     lastMediaPath = lastMediaPath,
-                    modifier = Modifier.align(Alignment.BottomStart).padding(start = 24.dp, bottom = 100.dp)
+                    modifier = Modifier.align(Alignment.BottomStart).padding(start = 24.dp, bottom = 90.dp)
                 )
                 
-                if (captureMode == CaptureMode.PRO && capabilities.supportsManualExposure) {
-                    Card(modifier = Modifier.align(Alignment.TopCenter).fillMaxWidth().padding(horizontal = 24.dp).offset(y = (-70).dp), shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(containerColor = Color(0xFF1C1C1E).copy(alpha = 0.9f)), elevation = CardDefaults.cardElevation(8.dp)) {
-                        Column(modifier = Modifier.padding(16.dp)) {
-                            Text("EXPOSURE ($exposureComp)", color = Color.Gray, fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                            Slider(value = exposureComp.toFloat(), onValueChange = { exposureComp = it.toInt() }, valueRange = capabilities.minExposureComp.toFloat()..capabilities.maxExposureComp.toFloat(), steps = (capabilities.maxExposureComp - capabilities.minExposureComp - 1).coerceAtLeast(0), colors = SliderDefaults.colors(thumbColor = Color.White, activeTrackColor = Color(0xFFFFD700), inactiveTrackColor = Color.DarkGray))
+                // MODE SELECTOR (Pill Shape like iPhone)
+                Row(
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .padding(bottom = 100.dp)
+                        .clip(RoundedCornerShape(24.dp))
+                        .background(Color.Black.copy(alpha = 0.7f))
+                        .padding(4.dp),
+                    horizontalArrangement = Arrangement.Center
+                ) {
+                    IphoneModeTab("VIDEO", captureMode == CaptureMode.VIDEO) { 
+                        captureMode = CaptureMode.VIDEO 
+                        context.getSystemService(android.os.Vibrator::class.java)?.vibrate(10)
+                    }
+                    IphoneModeTab("PHOTO", captureMode == CaptureMode.PHOTO) { 
+                        captureMode = CaptureMode.PHOTO 
+                        context.getSystemService(android.os.Vibrator::class.java)?.vibrate(10)
+                    }
+                    if (capabilities.supportsManualExposure) {
+                        IphoneModeTab("PRO", captureMode == CaptureMode.PRO) { 
+                            captureMode = CaptureMode.PRO 
+                            context.getSystemService(android.os.Vibrator::class.java)?.vibrate(10)
                         }
                     }
                 }
-
-                Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 40.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                    IconButton(onClick = { flashOn = !flashOn }) { Text(text = if (flashOn) "⚡" else "○", color = if (flashOn) Color(0xFFFFD700) else Color.White.copy(alpha = 0.7f), fontSize = 24.sp) }
+                
+                // SHUTTER & FLIP ROW
+                Row(
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .padding(bottom = 24.dp)
+                        .fillMaxWidth()
+                        .padding(horizontal = 40.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    // Empty space for balance or future zoom control
+                    Spacer(modifier = Modifier.width(40.dp))
                     
-                    val shutterColor by animateColorAsState(targetValue = if (isRecording) Color.Red else Color.White, label = "shutter")
-                    Box(modifier = Modifier
-                        .size(80.dp)
-                        .scale(shutterScale)
-                        .border(3.dp, Color.White.copy(alpha = 0.9f), CircleShape)
-                        .padding(5.dp)
-                        .background(shutterColor, CircleShape)
-                        .clickable { 
-                            isShutterPressed = true
-                            context.getSystemService(android.os.Vibrator::class.java)?.vibrate(20)
-                            if (captureMode == CaptureMode.VIDEO) {
-                                if (!isRecording) startRecording(context, videoCapture, cameraExecutor) { rec -> activeRecording = rec; isRecording = true }
-                                else { activeRecording?.stop(); activeRecording = null; isRecording = false }
-                            } else takePhoto(imageCapture, cameraExecutor, context, isHdrEnabled) { path -> lastMediaPath = path }
-                        }
-                        .pointerInput(Unit) {
-                            // FIXED: Use onTap instead of onRelease for better compatibility
-                            detectTapGestures(onTap = { isShutterPressed = false })
-                        },
-                        contentAlignment = Alignment.Center) {
-                        if (isRecording) Box(modifier = Modifier.size(20.dp).clip(RoundedCornerShape(3.dp)).background(Color.White))
+                    // PREMIUM SHUTTER BUTTON
+                    val shutterColor by animateColorAsState(
+                        targetValue = if (isRecording) Color.Red else Color.White,
+                        label = "shutter"
+                    )
+                    
+                    Box(
+                        modifier = Modifier
+                            .size(76.dp)
+                            .scale(shutterScale)
+                            .border(4.dp, Color.White.copy(alpha = 0.9f), CircleShape)
+                            .padding(4.dp)
+                            .background(shutterColor, CircleShape)
+                            .clickable { 
+                                // INSTANT FEEDBACK
+                                isShutterPressed = true
+                                showCaptureFlash = true
+                                context.getSystemService(android.os.Vibrator::class.java)?.vibrate(25)
+                                
+                                // Reset animations
+                                kotlinx.coroutines.GlobalScope.launch(kotlinx.coroutines.Dispatchers.Main) {
+                                    kotlinx.coroutines.delay(100)
+                                    isShutterPressed = false
+                                    kotlinx.coroutines.delay(50)
+                                    showCaptureFlash = false
+                                }
+                                
+                                // ACTUAL CAPTURE
+                                if (captureMode == CaptureMode.VIDEO) {
+                                    if (!isRecording) startRecording(context, videoCapture, cameraExecutor) { rec -> activeRecording = rec; isRecording = true }
+                                    else { activeRecording?.stop(); activeRecording = null; isRecording = false }
+                                } else takePhoto(imageCapture, cameraExecutor, context, isHdrEnabled) { path -> lastMediaPath = path }
+                            }
+                            .pointerInput(Unit) {
+                                detectTapGestures(onPress = { 
+                                    isShutterPressed = true 
+                                    tryAwaitRelease()
+                                    isShutterPressed = false 
+                                })
+                            },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        if (isRecording) Box(modifier = Modifier.size(24.dp).clip(RoundedCornerShape(4.dp)).background(Color.White))
                     }
                     
-                    IconButton(onClick = { isFrontCamera = !isFrontCamera }) { Text("🔄", color = Color.White.copy(alpha = 0.8f), fontSize = 24.sp) }
+                    // FLIP CAMERA
+                    IconButton(onClick = { isFrontCamera = !isFrontCamera }) { 
+                        Text("🔄", color = Color.White.copy(alpha = 0.9f), fontSize = 24.sp) 
+                    }
                 }
             }
         }
@@ -214,7 +317,31 @@ fun CameraScreen() {
 }
 
 @Composable
+fun IphoneModeTab(label: String, selected: Boolean, onClick: () -> Unit) {
+    val bgColor = if (selected) Color(0xFFFFD700).copy(alpha = 0.2f) else Color.Transparent
+    val textColor = if (selected) Color(0xFFFFD700) else Color.Gray
+    
+    Box(
+        modifier = Modifier
+            .clip(RoundedCornerShape(20.dp))
+            .background(bgColor)
+            .clickable { onClick() }
+            .padding(horizontal = 20.dp, vertical = 8.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text = label,
+            color = textColor,
+            fontSize = 14.sp,
+            fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+            letterSpacing = 0.5.sp
+        )
+    }
+}
+
+@Composable
 fun SharpModeTab(label: String, selected: Boolean, onClick: () -> Unit) {
+    // Kept for compatibility but replaced by IphoneModeTab in main UI
     Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(horizontal = 12.dp).clickable { onClick() }) {
         Text(text = label, color = if (selected) Color.White else Color.Gray, fontSize = 13.sp, fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium, letterSpacing = 0.8.sp)
         Spacer(modifier = Modifier.height(6.dp))
@@ -226,6 +353,8 @@ private fun takePhoto(imageCapture: ImageCapture?, executor: ExecutorService, co
     val capture = imageCapture ?: return
     
     if (useHdr) {
+        // FIX: Use MINIMIZE_LATENCY mode already set in builder
+        // Capture 3 frames rapidly for HDR
         val tempFiles = mutableListOf<File>()
         var completed = 0
         
@@ -242,10 +371,13 @@ private fun takePhoto(imageCapture: ImageCapture?, executor: ExecutorService, co
                             context.getExternalFilesDir(Environment.DIRECTORY_PICTURES),
                             "IMG_${SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())}_HDR.jpg"
                         )
-                        HdrProcessor.processHdrSequence(tempFiles, finalFile)
-                        saveToGallery(context, finalFile, true)
-                        onSaved(finalFile.absolutePath)
-                        tempFiles.forEach { it.delete() }
+                        // Process in background thread to avoid UI lag
+                        kotlinx.coroutines.GlobalScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                            HdrProcessor.processHdrSequence(tempFiles, finalFile)
+                            saveToGallery(context, finalFile, true)
+                            onSaved(finalFile.absolutePath)
+                            tempFiles.forEach { it.delete() }
+                        }
                     }
                 }
                 override fun onError(exc: ImageCaptureException) { Log.e("Camera", "HDR Error", exc) }
