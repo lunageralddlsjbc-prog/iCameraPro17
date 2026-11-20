@@ -6,18 +6,27 @@ import android.view.ViewGroup
 import androidx.camera.core.*
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.video.*
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.blur
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import java.io.File
@@ -28,6 +37,7 @@ import java.util.concurrent.Executors
 
 enum class CaptureMode { PHOTO, VIDEO, PRO }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CameraScreen() {
     val context = LocalContext.current
@@ -41,14 +51,16 @@ fun CameraScreen() {
     
     var previewViewRef by remember { mutableStateOf<androidx.camera.view.PreviewView?>(null) }
     var imageCapture by remember { mutableStateOf<ImageCapture?>(null) }
-    var videoCapture by remember { mutableStateOf<VideoCapture<VideoRecordEvent>?>(null) }
+    
+    // FIXED: Correct generic type for CameraX 1.4.1
+    var videoCapture by remember { mutableStateOf<VideoCapture<Recorder>?>(null) }
     var camera by remember { mutableStateOf<Camera?>(null) }
     var activeRecording by remember { mutableStateOf<Recording?>(null) }
     var isRecording by remember { mutableStateOf(false) }
     
     val cameraExecutor = remember { Executors.newSingleThreadExecutor() }
     
-    // Initialize / Rebind Camera when mode or lens changes
+    // Initialize / Rebind Camera
     LaunchedEffect(captureMode, isFrontCamera, flashOn) {
         val cameraProviderFuture = ProcessCameraProvider.getInstance(context)
         cameraProviderFuture.addListener({
@@ -70,8 +82,9 @@ fun CameraScreen() {
                     .setFlashMode(if (flashOn) ImageCapture.FLASH_MODE_ON else ImageCapture.FLASH_MODE_OFF)
                     .build()
                 
-                // FIXED: Use VideoCapture.Builder without Recorder parameter for CameraX 1.4.1
-                videoCapture = VideoCapture.Builder().build()
+                // FIXED: Create Recorder instance properly for CameraX 1.4.1
+                val recorder = Recorder.Builder().build()
+                videoCapture = VideoCapture.Builder(recorder).build()
                 
                 camera = when (captureMode) {
                     CaptureMode.VIDEO -> cameraProvider.bindToLifecycle(
@@ -82,11 +95,8 @@ fun CameraScreen() {
                     )
                 }
                 
-                // Apply Pro settings
                 if (captureMode == CaptureMode.PRO) {
-                    camera?.cameraControl?.apply {
-                        setExposureCompensationIndex(exposureComp)
-                    }
+                    camera?.cameraControl?.setExposureCompensationIndex(exposureComp)
                 }
                 
             } catch (e: Exception) {
@@ -105,92 +115,136 @@ fun CameraScreen() {
                         ViewGroup.LayoutParams.MATCH_PARENT
                     )
                     implementationMode = androidx.camera.view.PreviewView.ImplementationMode.COMPATIBLE
+                    scaleType = androidx.camera.view.PreviewView.ScaleType.FILL_CENTER
                 }.also { previewViewRef = it }
             },
             modifier = Modifier.fillMaxSize()
         )
         
-        // UI Overlay
+        // PREMIUM UI OVERLAY
         Column(
-            modifier = Modifier.fillMaxSize().padding(16.dp),
+            modifier = Modifier.fillMaxSize(),
             verticalArrangement = Arrangement.SpaceBetween
         ) {
-            // Top Bar: Mode Selector
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceEvenly,
-                verticalAlignment = Alignment.CenterVertically
+            // Top Bar: Glassmorphism Header
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 48.dp, start = 16.dp, end = 16.dp)
+                    .clip(RoundedCornerShape(24.dp))
+                    .background(Color.Black.copy(alpha = 0.4f))
+                    .blur(10.dp)
+                    .padding(horizontal = 8.dp, vertical = 4.dp)
             ) {
-                ModeTab("PHOTO", captureMode == CaptureMode.PHOTO) { captureMode = CaptureMode.PHOTO }
-                ModeTab("VIDEO", captureMode == CaptureMode.VIDEO) { captureMode = CaptureMode.VIDEO }
-                ModeTab("PRO", captureMode == CaptureMode.PRO) { captureMode = CaptureMode.PRO }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceEvenly,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    PremiumModeTab("PHOTO", captureMode == CaptureMode.PHOTO) { captureMode = CaptureMode.PHOTO }
+                    PremiumModeTab("VIDEO", captureMode == CaptureMode.VIDEO) { captureMode = CaptureMode.VIDEO }
+                    PremiumModeTab("PRO", captureMode == CaptureMode.PRO) { captureMode = CaptureMode.PRO }
+                }
             }
             
-            // Bottom Controls
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+            // Bottom Controls Area
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 32.dp)
             ) {
-                // Flash Toggle
-                IconButton(onClick = { flashOn = !flashOn }) {
-                    Text(if (flashOn) "⚡ON" else "⚡OFF", color = Color.White)
+                // Pro Panel (Floating Glass Card)
+                if (captureMode == CaptureMode.PRO) {
+                    Card(
+                        modifier = Modifier
+                            .align(Alignment.TopCenter)
+                            .fillMaxWidth()
+                            .padding(horizontal = 24.dp)
+                            .offset(y = (-80).dp),
+                        shape = RoundedCornerShape(20.dp),
+                        colors = CardDefaults.cardColors(
+                            containerColor = Color(0xFF1C1C1E).copy(alpha = 0.85f)
+                        ),
+                        elevation = CardDefaults.cardElevation(8.dp)
+                    ) {
+                        Column(modifier = Modifier.padding(20.dp)) {
+                            Text("EXPOSURE", color = Color.Gray, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                            Slider(
+                                value = exposureComp.toFloat(),
+                                onValueChange = { exposureComp = it.toInt() },
+                                valueRange = -2f..2f,
+                                steps = 3,
+                                colors = SliderDefaults.colors(
+                                    thumbColor = Color.White,
+                                    activeTrackColor = Color(0xFFFFD700), // Gold accent
+                                    inactiveTrackColor = Color.Gray
+                                )
+                            )
+                        }
+                    }
                 }
-                
-                // Shutter Button
-                Box(
+
+                // Main Control Row
+                Row(
                     modifier = Modifier
-                        .size(80.dp)
-                        .background(if (isRecording) Color.Red else Color.White, CircleShape)
-                        .clickable {
-                            if (captureMode == CaptureMode.VIDEO) {
-                                if (!isRecording) {
-                                    startRecording(context, videoCapture, cameraExecutor) { rec ->
-                                        activeRecording = rec
-                                        isRecording = true
-                                    }
-                                } else {
-                                    activeRecording?.stop()
-                                    activeRecording = null
-                                    isRecording = false
-                                }
-                            } else {
-                                takePhoto(imageCapture, cameraExecutor, context)
-                            }
-                        },
-                    contentAlignment = Alignment.Center
+                        .fillMaxWidth()
+                        .padding(horizontal = 32.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
+                    // Flash Button (Minimalist Icon)
+                    IconButton(onClick = { flashOn = !flashOn }) {
+                        Text(
+                            text = if (flashOn) "⚡" else "○",
+                            color = if (flashOn) Color(0xFFFFD700) else Color.White.copy(alpha = 0.6f),
+                            fontSize = 24.sp
+                        )
+                    }
+                    
+                    // PREMIUM SHUTTER BUTTON
+                    val shutterColor by animateColorAsState(
+                        targetValue = if (isRecording) Color.Red else Color.White,
+                        label = "shutter"
+                    )
+                    
                     Box(
                         modifier = Modifier
-                            .size(65.dp)
-                            .background(Color.LightGray, CircleShape)
-                    )
-                }
-                
-                // Flip Camera
-                IconButton(onClick = { isFrontCamera = !isFrontCamera }) {
-                    Text("🔄", color = Color.White, style = MaterialTheme.typography.headlineMedium)
-                }
-            }
-            
-            // Pro Controls Panel
-            if (captureMode == CaptureMode.PRO) {
-                Card(
-                    modifier = Modifier.fillMaxWidth().padding(bottom = 100.dp),
-                    colors = CardDefaults.cardColors(containerColor = Color.DarkGray.copy(alpha = 0.8f))
-                ) {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        Text("Exposure Compensation: $exposureComp", color = Color.White)
-                        Slider(
-                            value = exposureComp.toFloat(),
-                            onValueChange = { exposureComp = it.toInt() },
-                            valueRange = -2f..2f,
-                            steps = 3,
-                            colors = SliderDefaults.colors(
-                                thumbColor = Color.White,
-                                activeTrackColor = Color.White
+                            .size(84.dp)
+                            .border(4.dp, Color.White.copy(alpha = 0.8f), CircleShape)
+                            .padding(6.dp)
+                            .background(shutterColor, CircleShape)
+                            .clickable {
+                                if (captureMode == CaptureMode.VIDEO) {
+                                    if (!isRecording) {
+                                        startRecording(context, videoCapture, cameraExecutor) { rec ->
+                                            activeRecording = rec
+                                            isRecording = true
+                                        }
+                                    } else {
+                                        activeRecording?.stop()
+                                        activeRecording = null
+                                        isRecording = false
+                                    }
+                                } else {
+                                    takePhoto(imageCapture, cameraExecutor, context)
+                                }
+                            },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        // Inner ring animation for recording
+                        if (isRecording) {
+                            Box(
+                                modifier = Modifier
+                                    .size(24.dp)
+                                    .clip(RoundedCornerShape(4.dp))
+                                    .background(Color.White)
                             )
-                        )
+                        }
+                    }
+                    
+                    // Flip Camera Button
+                    IconButton(onClick = { isFrontCamera = !isFrontCamera }) {
+                        Text("🔄", color = Color.White.copy(alpha = 0.8f), fontSize = 24.sp)
                     }
                 }
             }
@@ -199,15 +253,31 @@ fun CameraScreen() {
 }
 
 @Composable
-fun ModeTab(label: String, selected: Boolean, onClick: () -> Unit) {
-    Text(
-        text = label,
-        color = if (selected) Color.White else Color.Gray,
-        style = MaterialTheme.typography.labelLarge,
+fun PremiumModeTab(label: String, selected: Boolean, onClick: () -> Unit) {
+    val textColor = if (selected) Color.White else Color.Gray
+    val underlineColor = if (selected) Color(0xFFFFD700) else Color.Transparent
+    
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
         modifier = Modifier
-            .padding(horizontal = 12.dp, vertical = 8.dp)
+            .padding(horizontal = 16.dp, vertical = 12.dp)
             .clickable { onClick() }
-    )
+    ) {
+        Text(
+            text = label,
+            color = textColor,
+            fontSize = 14.sp,
+            fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+            letterSpacing = 0.5.sp
+        )
+        Spacer(modifier = Modifier.height(4.dp))
+        Box(
+            modifier = Modifier
+                .width(20.dp)
+                .height(2.dp)
+                .background(underlineColor)
+        )
+    }
 }
 
 private fun takePhoto(
@@ -235,7 +305,7 @@ private fun takePhoto(
 
 private fun startRecording(
     context: Context,
-    videoCapture: VideoCapture<VideoRecordEvent>?,
+    videoCapture: VideoCapture<Recorder>?,
     executor: ExecutorService,
     onStarted: (Recording) -> Unit
 ) {
@@ -249,7 +319,7 @@ private fun startRecording(
     // FIXED: Use FileOutputOptions for CameraX 1.4.1
     val outputFileOptions = FileOutputOptions.Builder(videoFile).build()
     
-    // FIXED: prepareRecording returns PendingRecording, call start() with listener
+    // FIXED: Correct API chain for 1.4.1
     val pendingRecording = capture.output.prepareRecording(context, outputFileOptions)
         .withAudioEnabled()
     
@@ -257,7 +327,7 @@ private fun startRecording(
         when (event) {
             is VideoRecordEvent.Start -> Log.d("Camera", "Recording started")
             is VideoRecordEvent.Finalize -> Log.d("Camera", "Recording finalized")
-            is VideoRecordEvent.Status -> Log.d("Camera", "Status: ${event.recordingStats}")
+            is VideoRecordEvent.Status -> Log.d("Camera", "Status update")
         }
     }
     
