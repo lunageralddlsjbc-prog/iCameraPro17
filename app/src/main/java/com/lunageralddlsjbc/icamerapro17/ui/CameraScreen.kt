@@ -221,7 +221,6 @@ fun CameraScreen() {
                 .graphicsLayer {
                     // FIXED: Mirror effect when front camera + mirror enabled
                     scaleX = if (isFrontCamera && mirrorFront) -1f else 1f
-                    if (currentStyle != PhotographicStyle.STANDARD) { colorFilter = ColorFilter.colorMatrix(ColorMatrix(currentStyle.matrix)) }
                 }
         )
         
