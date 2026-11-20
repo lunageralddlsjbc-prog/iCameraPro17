@@ -1,3 +1,4 @@
+import androidx.compose.foundation.clickable
 package com.lunageralddlsjbc.icamerapro17.ui
 
 import androidx.compose.animation.core.animateFloatAsState
@@ -16,6 +17,7 @@ import androidx.compose.ui.unit.sp
 import com.lunageralddlsjbc.icamerapro17.ai.PhotoScore
 
 @Composable
+@OptIn(ExperimentalMaterial3Api::class)
 fun PhotoScorecard(score: PhotoScore, onDismiss: () -> Unit) {
     var animatedOverall by remember { mutableFloatStateOf(0f) }
     val targetOverall = score.overall.toFloat()

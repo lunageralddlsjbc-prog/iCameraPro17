@@ -282,19 +282,19 @@ fun CameraScreen() {
             }
         }
     }
-    if (photoScore != null) {
-        PhotoScorecard(score = photoScore!!) { photoScore = null }
     }
 }
 
 @Composable
+    if (photoScore != null) {
+        PhotoScorecard(score = photoScore!!) { photoScore = null }
+    }
+
 fun IphoneSettingSwitch(label: String, checked: Boolean, onCheckedChange: () -> Unit) {
     Row(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
         Text(text = label, color = Color.White, fontSize = 16.sp)
         Switch(checked = checked, onCheckedChange = { onCheckedChange() }, colors = SwitchDefaults.colors(checkedThumbColor = Color(0xFF34C759), checkedTrackColor = Color(0xFF34C759).copy(alpha = 0.5f)))
     }
-    if (photoScore != null) {
-        PhotoScorecard(score = photoScore!!) { photoScore = null }
     }
 }
 
@@ -305,8 +305,6 @@ fun IphoneModeTab(label: String, selected: Boolean, onClick: () -> Unit) {
     Box(modifier = Modifier.clip(RoundedCornerShape(20.dp)).background(bgColor).clickable { onClick() }.padding(horizontal = 20.dp, vertical = 8.dp), contentAlignment = Alignment.Center) {
         Text(text = label, color = textColor, fontSize = 14.sp, fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium, letterSpacing = 0.5.sp)
     }
-    if (photoScore != null) {
-        PhotoScorecard(score = photoScore!!) { photoScore = null }
     }
 }
 
@@ -335,8 +333,6 @@ private fun takePhoto(imageCapture: ImageCapture?, executor: ExecutorService, co
             Toast.makeText(context, "Capture Failed", Toast.LENGTH_LONG).show()
         }
     })
-    if (photoScore != null) {
-        PhotoScorecard(score = photoScore!!) { photoScore = null }
     }
 }
 
@@ -355,7 +351,5 @@ private fun startRecording(context: Context, videoCapture: VideoCapture<Recorder
         when (event) { is VideoRecordEvent.Start -> Log.d("Camera", "Started"); is VideoRecordEvent.Finalize -> Log.d("Camera", "Saved"); else -> {} }
     }
     onStarted(recording)
-    if (photoScore != null) {
-        PhotoScorecard(score = photoScore!!) { photoScore = null }
     }
 }
