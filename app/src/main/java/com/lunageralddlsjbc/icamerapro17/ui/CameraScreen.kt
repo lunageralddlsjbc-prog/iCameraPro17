@@ -19,6 +19,7 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -30,6 +31,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontWeight
@@ -101,7 +103,6 @@ fun CameraScreen() {
                     .setFlashMode(if (flashOn) ImageCapture.FLASH_MODE_ON else ImageCapture.FLASH_MODE_OFF)
                     .build()
                 
-                // Enable EIS for Video Stabilization
                 val recorder = Recorder.Builder()
                     .setQualitySelector(QualitySelector.from(Quality.HIGHEST))
                     .build()
@@ -165,10 +166,11 @@ fun CameraScreen() {
             }
             
             Box(modifier = Modifier.fillMaxWidth().background(brush = Brush.verticalGradient(colors = listOf(Color.Transparent, Color.Black.copy(alpha = 0.85f)))).padding(bottom = 40.dp, top = 10.dp)) {
-                // Gallery Thumbnail (Bottom Left)
-                GalleryThumbnail(lastMediaPath = lastMediaPath)
-                    .align(Alignment.BottomStart)
-                    .padding(start = 24.dp, bottom = 100.dp)
+                // FIXED: Pass modifier as parameter to composable
+                GalleryThumbnail(
+                    lastMediaPath = lastMediaPath,
+                    modifier = Modifier.align(Alignment.BottomStart).padding(start = 24.dp, bottom = 100.dp)
+                )
                 
                 if (captureMode == CaptureMode.PRO && capabilities.supportsManualExposure) {
                     Card(modifier = Modifier.align(Alignment.TopCenter).fillMaxWidth().padding(horizontal = 24.dp).offset(y = (-70).dp), shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(containerColor = Color(0xFF1C1C1E).copy(alpha = 0.9f)), elevation = CardDefaults.cardElevation(8.dp)) {
@@ -207,6 +209,35 @@ fun CameraScreen() {
                     IconButton(onClick = { isFrontCamera = !isFrontCamera }) { Text("🔄", color = Color.White.copy(alpha = 0.8f), fontSize = 24.sp) }
                 }
             }
+        }
+    }
+}
+
+@Composable
+fun GalleryThumbnail(lastMediaPath: String?, modifier: Modifier = Modifier) {
+    val context = LocalContext.current
+    
+    Card(
+        modifier = modifier
+            .size(60.dp)
+            .clip(RoundedCornerShape(8.dp))
+            .clickable {
+                lastMediaPath?.let { path ->
+                    val file = File(path)
+                    if (file.exists()) {
+                        val uri = Uri.fromFile(file)
+                        val intent = Intent(Intent.ACTION_VIEW).apply {
+                            setDataAndType(uri, if (path.endsWith(".mp4")) "video/mp4" else "image/jpeg")
+                            flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                        }
+                        context.startActivity(intent)
+                    }
+                }
+            },
+        colors = CardDefaults.cardColors(containerColor = Color.DarkGray)
+    ) {
+        Box(modifier = Modifier.size(60.dp).background(Color.Black), contentAlignment = Alignment.Center) {
+            Text(text = "🖼️", fontSize = 24.sp)
         }
     }
 }
