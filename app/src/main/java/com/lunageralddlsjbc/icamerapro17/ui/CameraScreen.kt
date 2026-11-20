@@ -28,6 +28,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -235,7 +236,7 @@ fun CameraScreen() {
                 Text("PHOTOGRAPHIC STYLE", color = Color.Gray, fontSize = 12.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(bottom = 8.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
                     PhotographicStyle.values().forEach { style ->
-                        FilterChip(selected = currentStyle == style, onClick = { currentStyle = style }, label = { Text(style.name, fontSize = 10.sp) }, colors = FilterChipDefaults.filterChipColors(selectedContainerColor = Color(0xFFFFD700))
+                        FilterChip(selected = currentStyle == style, onClick = { currentStyle = style }, label = { Text(style.styleName, fontSize = 10.sp) }, colors = FilterChipDefaults.filterChipColors(selectedContainerColor = Color(0xFFFFD700))
                         )
                     }
                 }
@@ -276,7 +277,7 @@ private fun takePhoto(imageCapture: ImageCapture?, executor: ExecutorService, co
                 override fun onImageSaved(output: ImageCapture.OutputFileResults) {
                     completed++
                     if (completed == 3) {
-                        val finalFile = File(context.getExternalFilesDir(Environment.DIRECTORY_PICTURES), "IMG_${SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())}_${style.name}.jpg")
+                        val finalFile = File(context.getExternalFilesDir(Environment.DIRECTORY_PICTURES), "IMG_${SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())}_${style.styleName}.jpg")
                         GlobalScope.launch(Dispatchers.IO) {
                             try {
                                 HdrProcessor.processHdrSequence(tempFiles, finalFile, style)
