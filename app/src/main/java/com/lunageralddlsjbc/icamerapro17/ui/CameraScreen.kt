@@ -261,9 +261,11 @@ fun CameraScreen() {
         }
     }
     
+    }
     if (photoScore != null) {
         PhotoScorecard(score = photoScore!!) { photoScore = null }
     }
+
     if (showSettings) {
         ModalBottomSheet(onDismissRequest = { showSettings = false }, containerColor = Color(0xFF1C1C1E)) {
             Column(modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(16.dp)) {
