@@ -1,6 +1,7 @@
 package com.lunageralddlsjbc.icamerapro17.gallery
 
 import android.content.Intent
+import android.net.Uri
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
@@ -17,6 +18,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import java.io.File
 
 @Composable
 fun GalleryThumbnail(lastMediaPath: String?, modifier: Modifier = Modifier) {
@@ -27,26 +29,32 @@ fun GalleryThumbnail(lastMediaPath: String?, modifier: Modifier = Modifier) {
             .size(60.dp)
             .clip(RoundedCornerShape(8.dp))
             .clickable {
-                // FIXED: Use specific Gallery App Intent instead of generic image viewer
-                val galleryIntent = Intent(Intent.ACTION_MAIN).apply {
-                    addCategory(Intent.CATEGORY_APP_GALLERY)
-                    flags = Intent.FLAG_ACTIVITY_NEW_TASK
-                }
-                
-                // Check if a gallery app exists, otherwise fallback to generic picker
-                if (galleryIntent.resolveActivity(context.packageManager) != null) {
-                    context.startActivity(galleryIntent)
-                } else {
-                    val fallbackIntent = Intent(Intent.ACTION_PICK, android.provider.MediaStore.Images.Media.EXTERNAL_CONTENT_URI).apply {
-                        flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                lastMediaPath?.let { path ->
+                    val file = File(path)
+                    if (file.exists()) {
+                        // FIXED: Open the specific last photo, not the whole gallery
+                        val uri = Uri.fromFile(file)
+                        val intent = Intent(Intent.ACTION_VIEW).apply {
+                            setDataAndType(uri, if (path.endsWith(".mp4")) "video/mp4" else "image/jpeg")
+                            flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                        }
+                        context.startActivity(intent)
+                    } else {
+                        // Fallback: open gallery app if no photo yet
+                        val galleryIntent = Intent(Intent.ACTION_MAIN).apply {
+                            addCategory(Intent.CATEGORY_APP_GALLERY)
+                            flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                        }
+                        if (galleryIntent.resolveActivity(context.packageManager) != null) {
+                            context.startActivity(galleryIntent)
+                        }
                     }
-                    context.startActivity(fallbackIntent)
                 }
             },
         colors = CardDefaults.cardColors(containerColor = Color.DarkGray)
     ) {
         Box(modifier = Modifier.size(60.dp).background(Color.Black), contentAlignment = Alignment.Center) {
-            Text(text = "🖼️", fontSize = 24.sp)
+            Text(text = if (lastMediaPath != null) "🖼️" else "📷", fontSize = 24.sp)
         }
     }
 }
