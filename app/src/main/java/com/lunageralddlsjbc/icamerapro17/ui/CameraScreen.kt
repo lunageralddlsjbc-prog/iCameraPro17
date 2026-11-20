@@ -166,7 +166,6 @@ fun CameraScreen() {
             }
             
             Box(modifier = Modifier.fillMaxWidth().background(brush = Brush.verticalGradient(colors = listOf(Color.Transparent, Color.Black.copy(alpha = 0.85f)))).padding(bottom = 40.dp, top = 10.dp)) {
-                // FIXED: Pass modifier as parameter to composable
                 GalleryThumbnail(
                     lastMediaPath = lastMediaPath,
                     modifier = Modifier.align(Alignment.BottomStart).padding(start = 24.dp, bottom = 100.dp)
@@ -200,7 +199,8 @@ fun CameraScreen() {
                             } else takePhoto(imageCapture, cameraExecutor, context, isHdrEnabled) { path -> lastMediaPath = path }
                         }
                         .pointerInput(Unit) {
-                            detectTapGestures(onRelease = { isShutterPressed = false })
+                            // FIXED: Use onTap instead of onRelease for better compatibility
+                            detectTapGestures(onTap = { isShutterPressed = false })
                         },
                         contentAlignment = Alignment.Center) {
                         if (isRecording) Box(modifier = Modifier.size(20.dp).clip(RoundedCornerShape(3.dp)).background(Color.White))
@@ -209,35 +209,6 @@ fun CameraScreen() {
                     IconButton(onClick = { isFrontCamera = !isFrontCamera }) { Text("🔄", color = Color.White.copy(alpha = 0.8f), fontSize = 24.sp) }
                 }
             }
-        }
-    }
-}
-
-@Composable
-fun GalleryThumbnail(lastMediaPath: String?, modifier: Modifier = Modifier) {
-    val context = LocalContext.current
-    
-    Card(
-        modifier = modifier
-            .size(60.dp)
-            .clip(RoundedCornerShape(8.dp))
-            .clickable {
-                lastMediaPath?.let { path ->
-                    val file = File(path)
-                    if (file.exists()) {
-                        val uri = Uri.fromFile(file)
-                        val intent = Intent(Intent.ACTION_VIEW).apply {
-                            setDataAndType(uri, if (path.endsWith(".mp4")) "video/mp4" else "image/jpeg")
-                            flags = Intent.FLAG_ACTIVITY_NEW_TASK
-                        }
-                        context.startActivity(intent)
-                    }
-                }
-            },
-        colors = CardDefaults.cardColors(containerColor = Color.DarkGray)
-    ) {
-        Box(modifier = Modifier.size(60.dp).background(Color.Black), contentAlignment = Alignment.Center) {
-            Text(text = "🖼️", fontSize = 24.sp)
         }
     }
 }

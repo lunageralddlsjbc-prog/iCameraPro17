@@ -17,14 +17,15 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import java.io.File
 
 @Composable
-fun GalleryThumbnail(lastMediaPath: String?) {
+fun GalleryThumbnail(lastMediaPath: String?, modifier: Modifier = Modifier) {
     val context = LocalContext.current
     
     Card(
-        modifier = Modifier
+        modifier = modifier
             .size(60.dp)
             .clip(RoundedCornerShape(8.dp))
             .clickable {
