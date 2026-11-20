@@ -1,0 +1,2 @@
+-keep class org.opencv.** { *; }
+-keep class androidx.camera.** { *; }
