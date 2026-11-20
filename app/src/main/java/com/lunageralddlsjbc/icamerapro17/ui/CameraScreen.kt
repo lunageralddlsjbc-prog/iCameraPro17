@@ -150,7 +150,6 @@ fun CameraScreen() {
                 val cameraSelector = if (isFrontCamera) CameraSelector.DEFAULT_FRONT_CAMERA else CameraSelector.DEFAULT_BACK_CAMERA
                 
                 // Keep existing preview
-                val existingPreview = cameraProvider.getAvailableUseCases().filterIsInstance<Preview>().firstOrNull()
                 
                 // Create new capture use case
                 val newImageCapture = ImageCapture.Builder()
@@ -222,17 +221,9 @@ fun CameraScreen() {
                 .graphicsLayer {
                     // FIXED: Mirror effect when front camera + mirror enabled
                     scaleX = if (isFrontCamera && mirrorFront) -1f else 1f
+                    if (currentStyle != PhotographicStyle.STANDARD) { colorFilter = ColorFilter.colorMatrix(ColorMatrix(currentStyle.matrix)) }
                 }
         )
-        
-        // FIXED: Live style overlay (subtle tint)
-        if (currentStyle != PhotographicStyle.STANDARD) {
-            Box(
-                modifier = Modifier.fillMaxSize()
-                    .background(Color.Transparent)
-                    .graphicsLayer { colorFilter = android.graphics.ColorMatrixColorFilter(currentStyle.matrix) }
-            )
-        }
         
         // FIXED: Grid overlay
         if (gridEnabled) {
