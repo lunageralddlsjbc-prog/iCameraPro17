@@ -197,7 +197,7 @@ fun CameraScreen() {
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .colorFilter(ColorFilter.colorMatrix(ColorMatrix(currentStyle.matrix)))
+                    .graphicsLayer { colorFilter = android.graphics.ColorMatrixColorFilter(currentStyle.matrix) }
             )
         }
         
