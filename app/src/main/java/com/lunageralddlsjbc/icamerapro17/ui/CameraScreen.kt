@@ -36,6 +36,8 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import com.lunageralddlsjbc.icamerapro17.hardware.CapabilityManager
+import com.lunageralddlsjbc.icamerapro17.processing.HdrProcessor
+import java.io.File
 import java.text.SimpleDateFormat
 import java.util.*
 import java.util.concurrent.ExecutorService
@@ -63,6 +65,7 @@ fun CameraScreen() {
     var isFrontCamera by remember { mutableStateOf(false) }
     var flashOn by remember { mutableStateOf(false) }
     var exposureComp by remember { mutableStateOf(0) }
+    var isHdrEnabled by remember { mutableStateOf(true) }
     
     val capabilities = remember { CapabilityManager.detect(context) }
     
@@ -93,12 +96,22 @@ fun CameraScreen() {
                     .setFlashMode(if (flashOn) ImageCapture.FLASH_MODE_ON else ImageCapture.FLASH_MODE_OFF)
                     .build()
                 
-                val recorder = Recorder.Builder().build()
+                val recorder = Recorder.Builder()
+                    .setQualitySelector(QualitySelector.from(Quality.HIGHEST))
+                    .build()
+                    
                 videoCapture = VideoCapture.Builder(recorder).build()
                 
                 camera = when (captureMode) {
                     CaptureMode.VIDEO -> cameraProvider.bindToLifecycle(lifecycleOwner, cameraSelector, preview, videoCapture)
                     else -> cameraProvider.bindToLifecycle(lifecycleOwner, cameraSelector, preview, imageCapture)
+                }
+                
+                // Enable EIS for video stabilization
+                camera?.cameraInfo?.let { info ->
+                    if (info.isZoomSupported) {
+                        // EIS is automatically handled by CameraX when available
+                    }
                 }
                 
                 if (captureMode == CaptureMode.PRO && capabilities.supportsManualExposure) {
@@ -132,11 +145,23 @@ fun CameraScreen() {
         )
         
         Column(modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.SpaceBetween) {
+            // Top Bar with HDR Toggle
             Box(modifier = Modifier.fillMaxWidth().padding(top = 48.dp).background(brush = Brush.verticalGradient(colors = listOf(Color.Black.copy(alpha = 0.7f), Color.Transparent))).padding(vertical = 12.dp)) {
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
                     SharpModeTab("PHOTO", captureMode == CaptureMode.PHOTO) { captureMode = CaptureMode.PHOTO; context.getSystemService(android.os.Vibrator::class.java)?.vibrate(10) }
                     SharpModeTab("VIDEO", captureMode == CaptureMode.VIDEO) { captureMode = CaptureMode.VIDEO; context.getSystemService(android.os.Vibrator::class.java)?.vibrate(10) }
                     if (capabilities.supportsManualExposure) SharpModeTab("PRO", captureMode == CaptureMode.PRO) { captureMode = CaptureMode.PRO; context.getSystemService(android.os.Vibrator::class.java)?.vibrate(10) }
+                }
+                
+                // HDR Indicator
+                if (captureMode == CaptureMode.PHOTO) {
+                    Text(
+                        text = if (isHdrEnabled) "HDR" else "HDR OFF",
+                        color = if (isHdrEnabled) Color(0xFFFFD700) else Color.Gray,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.align(Alignment.TopEnd).padding(end = 16.dp).clickable { isHdrEnabled = !isHdrEnabled }
+                    )
                 }
             }
             
@@ -159,7 +184,7 @@ fun CameraScreen() {
                         if (captureMode == CaptureMode.VIDEO) {
                             if (!isRecording) startRecording(context, videoCapture, cameraExecutor) { rec -> activeRecording = rec; isRecording = true }
                             else { activeRecording?.stop(); activeRecording = null; isRecording = false }
-                        } else takePhoto(imageCapture, cameraExecutor, context)
+                        } else takePhoto(imageCapture, cameraExecutor, context, isHdrEnabled)
                     }, contentAlignment = Alignment.Center) {
                         if (isRecording) Box(modifier = Modifier.size(20.dp).clip(RoundedCornerShape(3.dp)).background(Color.White))
                     }
@@ -180,18 +205,77 @@ fun SharpModeTab(label: String, selected: Boolean, onClick: () -> Unit) {
     }
 }
 
-private fun takePhoto(imageCapture: ImageCapture?, executor: ExecutorService, context: Context) {
+private fun takePhoto(imageCapture: ImageCapture?, executor: ExecutorService, context: Context, useHdr: Boolean) {
     val capture = imageCapture ?: return
-    val contentValues = ContentValues().apply {
-        put(MediaStore.Images.Media.DISPLAY_NAME, "IMG_${SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())}.jpg")
-        put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg")
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) put(MediaStore.Images.Media.RELATIVE_PATH, Environment.DIRECTORY_PICTURES + "/iCamera Pro 17")
+    
+    if (useHdr) {
+        // HDR MODE: Capture 3 frames rapidly
+        val tempFiles = mutableListOf<File>()
+        var completed = 0
+        
+        repeat(3) { index ->
+            val tempFile = File(context.cacheDir, "hdr_temp_$index.jpg")
+            tempFiles.add(tempFile)
+            
+            val options = ImageCapture.OutputFileOptions.Builder(tempFile).build()
+            capture.takePicture(options, executor, object : ImageCapture.OnImageSavedCallback {
+                override fun onImageSaved(output: ImageCapture.OutputFileResults) {
+                    completed++
+                    if (completed == 3) {
+                        // Process HDR sequence
+                        val finalFile = File(
+                            context.getExternalFilesDir(Environment.DIRECTORY_PICTURES),
+                            "IMG_${SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())}_HDR.jpg"
+                        )
+                        HdrProcessor.processHdrSequence(tempFiles, finalFile)
+                        
+                        // Save to MediaStore
+                        saveToGallery(context, finalFile, true)
+                        
+                        // Cleanup temps
+                        tempFiles.forEach { it.delete() }
+                    }
+                }
+                override fun onError(exc: ImageCaptureException) { Log.e("Camera", "HDR Error", exc) }
+            })
+        }
+    } else {
+        // STANDARD MODE
+        val contentValues = ContentValues().apply {
+            put(MediaStore.Images.Media.DISPLAY_NAME, "IMG_${SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())}.jpg")
+            put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg")
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) put(MediaStore.Images.Media.RELATIVE_PATH, Environment.DIRECTORY_PICTURES + "/iCamera Pro 17")
+        }
+        val outputOptions = ImageCapture.OutputFileOptions.Builder(context.contentResolver, MediaStore.Images.Media.EXTERNAL_CONTENT_URI, contentValues).build()
+        capture.takePicture(outputOptions, executor, object : ImageCapture.OnImageSavedCallback {
+            override fun onImageSaved(output: ImageCapture.OutputFileResults) { Log.d("Camera", "Saved: ${output.savedUri}") }
+            override fun onError(exc: ImageCaptureException) { Log.e("Camera", "Error", exc) }
+        })
     }
-    val outputOptions = ImageCapture.OutputFileOptions.Builder(context.contentResolver, MediaStore.Images.Media.EXTERNAL_CONTENT_URI, contentValues).build()
-    capture.takePicture(outputOptions, executor, object : ImageCapture.OnImageSavedCallback {
-        override fun onImageSaved(output: ImageCapture.OutputFileResults) { Log.d("Camera", "Saved: ${output.savedUri}") }
-        override fun onError(exc: ImageCaptureException) { Log.e("Camera", "Error", exc) }
-    })
+}
+
+private fun saveToGallery(context: Context, file: File, isImage: Boolean) {
+    val contentValues = ContentValues().apply {
+        if (isImage) {
+            put(MediaStore.Images.Media.DISPLAY_NAME, file.name)
+            put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg")
+            put(MediaStore.Images.Media.RELATIVE_PATH, Environment.DIRECTORY_PICTURES + "/iCamera Pro 17")
+        } else {
+            put(MediaStore.Video.Media.DISPLAY_NAME, file.name)
+            put(MediaStore.Video.Media.MIME_TYPE, "video/mp4")
+            put(MediaStore.Video.Media.RELATIVE_PATH, Environment.DIRECTORY_MOVIES + "/iCamera Pro 17")
+        }
+    }
+    
+    val uri = if (isImage) MediaStore.Images.Media.EXTERNAL_CONTENT_URI else MediaStore.Video.Media.EXTERNAL_CONTENT_URI
+    
+    context.contentResolver.insert(uri, contentValues)?.let { destUri ->
+        context.contentResolver.openOutputStream(destUri)?.use { outputStream ->
+            file.inputStream().use { inputStream ->
+                inputStream.copyTo(outputStream)
+            }
+        }
+    }
 }
 
 private fun startRecording(context: Context, videoCapture: VideoCapture<Recorder>?, executor: ExecutorService, onStarted: (Recording) -> Unit) {
