@@ -26,10 +26,8 @@ android {
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
         debug {
-            // Enable R8 in debug mode to help with DEX merging
-            isMinifyEnabled = true
-            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-            
+            // CRITICAL FIX: Disable minification in debug to prevent OOM on GitHub Actions
+            isMinifyEnabled = false
             packaging {
                 jniLibs {
                     useLegacyPackaging = true
@@ -42,7 +40,6 @@ android {
         jniLibs {
             useLegacyPackaging = true
         }
-        // Exclude duplicate meta-inf files that cause merge conflicts
         resources {
             excludes += listOf("META-INF/AL2.0", "META-INF/LGPL2.1", "META-INF/*.kotlin_module")
         }
@@ -77,7 +74,7 @@ dependencies {
     implementation("androidx.compose.ui:ui-tooling-preview:1.7.5")
     implementation("androidx.compose.material3:material3:1.3.1")
     
-    // CameraX Core (Removed OpenCV to fix DEX merge)
+    // CameraX Core Only (Removed Navigation Compose to reduce memory pressure)
     implementation("androidx.camera:camera-core:1.4.1")
     implementation("androidx.camera:camera-camera2:1.4.1")
     implementation("androidx.camera:camera-lifecycle:1.4.1")
@@ -85,9 +82,6 @@ dependencies {
     implementation("androidx.camera:camera-view:1.4.1")
     implementation("androidx.camera:camera-extensions:1.4.1")
     implementation("androidx.camera:camera-viewfinder-compose:1.0.0-alpha02")
-    
-    // Removed navigation-compose temporarily to reduce DEX count
-    // implementation("androidx.navigation:navigation-compose:2.8.4")
     
     testImplementation("junit:junit:4.13.2")
     androidTestImplementation("androidx.test.ext:junit:1.2.1")
