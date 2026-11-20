@@ -107,13 +107,6 @@ fun CameraScreen() {
                     else -> cameraProvider.bindToLifecycle(lifecycleOwner, cameraSelector, preview, imageCapture)
                 }
                 
-                // Enable EIS for video stabilization
-                camera?.cameraInfo?.let { info ->
-                    if (info.isZoomSupported) {
-                        // EIS is automatically handled by CameraX when available
-                    }
-                }
-                
                 if (captureMode == CaptureMode.PRO && capabilities.supportsManualExposure) {
                     camera?.cameraControl?.setExposureCompensationIndex(exposureComp)
                 }
@@ -145,7 +138,6 @@ fun CameraScreen() {
         )
         
         Column(modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.SpaceBetween) {
-            // Top Bar with HDR Toggle
             Box(modifier = Modifier.fillMaxWidth().padding(top = 48.dp).background(brush = Brush.verticalGradient(colors = listOf(Color.Black.copy(alpha = 0.7f), Color.Transparent))).padding(vertical = 12.dp)) {
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
                     SharpModeTab("PHOTO", captureMode == CaptureMode.PHOTO) { captureMode = CaptureMode.PHOTO; context.getSystemService(android.os.Vibrator::class.java)?.vibrate(10) }
@@ -153,7 +145,6 @@ fun CameraScreen() {
                     if (capabilities.supportsManualExposure) SharpModeTab("PRO", captureMode == CaptureMode.PRO) { captureMode = CaptureMode.PRO; context.getSystemService(android.os.Vibrator::class.java)?.vibrate(10) }
                 }
                 
-                // HDR Indicator
                 if (captureMode == CaptureMode.PHOTO) {
                     Text(
                         text = if (isHdrEnabled) "HDR" else "HDR OFF",
@@ -209,7 +200,6 @@ private fun takePhoto(imageCapture: ImageCapture?, executor: ExecutorService, co
     val capture = imageCapture ?: return
     
     if (useHdr) {
-        // HDR MODE: Capture 3 frames rapidly
         val tempFiles = mutableListOf<File>()
         var completed = 0
         
@@ -222,17 +212,12 @@ private fun takePhoto(imageCapture: ImageCapture?, executor: ExecutorService, co
                 override fun onImageSaved(output: ImageCapture.OutputFileResults) {
                     completed++
                     if (completed == 3) {
-                        // Process HDR sequence
                         val finalFile = File(
                             context.getExternalFilesDir(Environment.DIRECTORY_PICTURES),
                             "IMG_${SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())}_HDR.jpg"
                         )
                         HdrProcessor.processHdrSequence(tempFiles, finalFile)
-                        
-                        // Save to MediaStore
                         saveToGallery(context, finalFile, true)
-                        
-                        // Cleanup temps
                         tempFiles.forEach { it.delete() }
                     }
                 }
@@ -240,7 +225,6 @@ private fun takePhoto(imageCapture: ImageCapture?, executor: ExecutorService, co
             })
         }
     } else {
-        // STANDARD MODE
         val contentValues = ContentValues().apply {
             put(MediaStore.Images.Media.DISPLAY_NAME, "IMG_${SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())}.jpg")
             put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg")
