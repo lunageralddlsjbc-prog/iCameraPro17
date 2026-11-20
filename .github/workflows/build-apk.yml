@@ -42,7 +42,6 @@ jobs:
           echo 'zipStorePath=wrapper/dists' >> gradle/wrapper/gradle-wrapper.properties
         fi
         
-    # FIXED: Add Gradle dependency caching to avoid rate limits
     - name: Cache Gradle dependencies
       uses: actions/cache@v4
       with:
@@ -53,8 +52,9 @@ jobs:
         restore-keys: |
           ${{ runner.os }}-gradle-
         
-    - name: Build Debug APK with retry
-      run: ./gradlew assembleDebug --no-daemon --retry --info
+    # FIXED: Removed invalid --retry flag
+    - name: Build Debug APK
+      run: ./gradlew assembleDebug --no-daemon
       env:
         GRADLE_OPTS: "-Dorg.gradle.jvmargs=-Xmx4096m -XX:MaxMetaspaceSize=512m"
         
