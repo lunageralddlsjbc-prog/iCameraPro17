@@ -15,7 +15,6 @@ android {
         versionName = "1.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         
-        // Enable multidex to handle large number of methods
         multiDexEnabled = true
         
         ndk {
@@ -46,12 +45,14 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
-        // Enable core library desugaring for multidex compatibility
         isCoreLibraryDesugaringEnabled = true
     }
     
-    kotlinOptions {
-        jvmTarget = "17"
+    // Configure Kotlin JVM target via tasks instead of kotlinOptions DSL
+    tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
+        compilerOptions {
+            jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
+        }
     }
     
     buildFeatures {
@@ -60,10 +61,7 @@ android {
 }
 
 dependencies {
-    // Core library desugaring (required for multidex on older devices)
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
-    
-    // Multidex support
     implementation("androidx.multidex:multidex:2.0.1")
     
     implementation("androidx.core:core-ktx:1.15.0")
