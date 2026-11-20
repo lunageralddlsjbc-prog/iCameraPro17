@@ -15,7 +15,9 @@ android {
         versionName = "1.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         
-        // Only package arm64-v8a libraries (matches Infinix Hot 60i hardware)
+        // Enable multidex to handle large number of methods
+        multiDexEnabled = true
+        
         ndk {
             abiFilters += listOf("arm64-v8a")
         }
@@ -27,7 +29,6 @@ android {
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
         debug {
-            // Disable stripping of native libraries to prevent packaging errors
             packaging {
                 jniLibs {
                     useLegacyPackaging = true
@@ -36,7 +37,6 @@ android {
         }
     }
     
-    // Also apply to release type
     packaging {
         jniLibs {
             useLegacyPackaging = true
@@ -46,6 +46,12 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
+        // Enable core library desugaring for multidex compatibility
+        isCoreLibraryDesugaringEnabled = true
+    }
+    
+    kotlinOptions {
+        jvmTarget = "17"
     }
     
     buildFeatures {
@@ -54,6 +60,12 @@ android {
 }
 
 dependencies {
+    // Core library desugaring (required for multidex on older devices)
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
+    
+    // Multidex support
+    implementation("androidx.multidex:multidex:2.0.1")
+    
     implementation("androidx.core:core-ktx:1.15.0")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
     implementation("androidx.activity:activity-compose:1.9.3")
