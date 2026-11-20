@@ -192,14 +192,6 @@ fun CameraScreen() {
                 .graphicsLayer { scaleX = if (isFrontCamera && mirrorFront) -1f else 1f }
         )
         
-        // REAL-TIME STYLE PREVIEW (Guaranteed to compile using Modifier.colorFilter)
-        if (currentStyle != PhotographicStyle.STANDARD) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .graphicsLayer { colorFilter = android.graphics.ColorMatrixColorFilter(currentStyle.matrix) }
-            )
-        }
         
         // GRID OVERLAY
         if (gridEnabled) {
