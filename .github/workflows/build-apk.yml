@@ -21,33 +21,26 @@ jobs:
         
     - name: Setup Gradle Wrapper
       run: |
-        # Download gradle wrapper jar if missing
         mkdir -p gradle/wrapper
+        
+        # Download wrapper JAR
         if [ ! -f gradle/wrapper/gradle-wrapper.jar ]; then
           curl -L https://raw.githubusercontent.com/gradle/gradle/master/gradle/wrapper/gradle-wrapper.jar -o gradle/wrapper/gradle-wrapper.jar
         fi
         
-        # Create gradlew if missing
-        if [ ! -f gradlew ]; then
-          cat > gradlew << 'WRAPPER'
-#!/bin/sh
-APP_HOME=$( cd "${0%/*}" && pwd -P ) || exit
-CLASSPATH=$APP_HOME/gradle/wrapper/gradle-wrapper.jar
-exec java -classpath "$CLASSPATH" org.gradle.wrapper.GradleWrapperMain "$@"
-WRAPPER
-          chmod +x gradlew
-        fi
+        # Create gradlew script
+        echo '#!/bin/sh' > gradlew
+        echo 'APP_HOME=$( cd "${0%/*}" && pwd -P ) || exit' >> gradlew
+        echo 'CLASSPATH=$APP_HOME/gradle/wrapper/gradle-wrapper.jar' >> gradlew
+        echo 'exec java -classpath "$CLASSPATH" org.gradle.wrapper.GradleWrapperMain "$@"' >> gradlew
+        chmod +x gradlew
         
-        # Ensure wrapper properties exist
-        if [ ! -f gradle/wrapper/gradle-wrapper.properties ]; then
-          cat > gradle/wrapper/gradle-wrapper.properties << 'PROPS'
-distributionBase=GRADLE_USER_HOME
-distributionPath=wrapper/dists
-distributionUrl=https\://services.gradle.org/distributions/gradle-9.9.2-bin.zip
-zipStoreBase=GRADLE_USER_HOME
-zipStorePath=wrapper/dists
-PROPS
-        fi
+        # Create properties file
+        echo 'distributionBase=GRADLE_USER_HOME' > gradle/wrapper/gradle-wrapper.properties
+        echo 'distributionPath=wrapper/dists' >> gradle/wrapper/gradle-wrapper.properties
+        echo 'distributionUrl=https\://services.gradle.org/distributions/gradle-9.9.2-bin.zip' >> gradle/wrapper/gradle-wrapper.properties
+        echo 'zipStoreBase=GRADLE_USER_HOME' >> gradle/wrapper/gradle-wrapper.properties
+        echo 'zipStorePath=wrapper/dists' >> gradle/wrapper/gradle-wrapper.properties
         
     - name: Build Debug APK
       run: ./gradlew assembleDebug --no-daemon
