@@ -11,8 +11,8 @@ android {
         applicationId = "com.lunageralddlsjbc.icamerapro17"
         minSdk = 24
         targetSdk = 36
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = 2
+        versionName = "2.0-Phase2"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         
         ndk {
@@ -26,23 +26,16 @@ android {
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
         debug {
-            // CRITICAL FIX: Disable minification in debug to prevent OOM on GitHub Actions
             isMinifyEnabled = false
             packaging {
-                jniLibs {
-                    useLegacyPackaging = true
-                }
+                jniLibs { useLegacyPackaging = true }
             }
         }
     }
     
     packaging {
-        jniLibs {
-            useLegacyPackaging = true
-        }
-        resources {
-            excludes += listOf("META-INF/AL2.0", "META-INF/LGPL2.1", "META-INF/*.kotlin_module")
-        }
+        jniLibs { useLegacyPackaging = true }
+        resources { excludes += listOf("META-INF/AL2.0", "META-INF/LGPL2.1", "META-INF/*.kotlin_module") }
     }
     
     compileOptions {
@@ -52,19 +45,14 @@ android {
     }
     
     tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
-        compilerOptions {
-            jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
-        }
+        compilerOptions { jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17) }
     }
     
-    buildFeatures {
-        compose = true
-    }
+    buildFeatures { compose = true }
 }
 
 dependencies {
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
-    
     implementation("androidx.core:core-ktx:1.15.0")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
     implementation("androidx.activity:activity-compose:1.9.3")
@@ -74,7 +62,7 @@ dependencies {
     implementation("androidx.compose.ui:ui-tooling-preview:1.7.5")
     implementation("androidx.compose.material3:material3:1.3.1")
     
-    // CameraX Core Only (Removed Navigation Compose to reduce memory pressure)
+    // CameraX Full Suite
     implementation("androidx.camera:camera-core:1.4.1")
     implementation("androidx.camera:camera-camera2:1.4.1")
     implementation("androidx.camera:camera-lifecycle:1.4.1")
@@ -82,6 +70,9 @@ dependencies {
     implementation("androidx.camera:camera-view:1.4.1")
     implementation("androidx.camera:camera-extensions:1.4.1")
     implementation("androidx.camera:camera-viewfinder-compose:1.0.0-alpha02")
+    
+    // Navigation for mode switching
+    implementation("androidx.navigation:navigation-compose:2.8.4")
     
     testImplementation("junit:junit:4.13.2")
     androidTestImplementation("androidx.test.ext:junit:1.2.1")
