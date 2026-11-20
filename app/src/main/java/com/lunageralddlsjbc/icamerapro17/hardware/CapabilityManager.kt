@@ -20,7 +20,13 @@ object CapabilityManager {
         var caps = CameraCapabilities()
         
         try {
-            val backId = CameraSelector.DEFAULT_BACK_CAMERA.filter(cameraManager.cameraIdList).firstOrNull()
+            val allIds = cameraManager.cameraIdList.toList()
+            
+            val backId = allIds.firstOrNull { id ->
+                val chars = cameraManager.getCameraCharacteristics(id)
+                chars.get(CameraCharacteristics.LENS_FACING) == CameraCharacteristics.LENS_FACING_BACK
+            }
+            
             if (backId != null) {
                 caps = caps.copy(hasBackCamera = true)
                 val chars = cameraManager.getCameraCharacteristics(backId)
@@ -39,10 +45,17 @@ object CapabilityManager {
                 }
             }
             
-            if (CameraSelector.DEFAULT_FRONT_CAMERA.filter(cameraManager.cameraIdList).isNotEmpty()) {
+            val frontId = allIds.firstOrNull { id ->
+                val chars = cameraManager.getCameraCharacteristics(id)
+                chars.get(CameraCharacteristics.LENS_FACING) == CameraCharacteristics.LENS_FACING_FRONT
+            }
+            
+            if (frontId != null) {
                 caps = caps.copy(hasFrontCamera = true)
             }
-        } catch (e: Exception) { e.printStackTrace() }
+        } catch (e: Exception) { 
+            e.printStackTrace() 
+        }
         
         return caps
     }
