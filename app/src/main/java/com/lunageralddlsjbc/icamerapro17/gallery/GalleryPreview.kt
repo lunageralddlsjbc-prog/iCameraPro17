@@ -1,7 +1,6 @@
 package com.lunageralddlsjbc.icamerapro17.gallery
 
 import android.content.Intent
-import android.net.Uri
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
@@ -18,7 +17,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import java.io.File
 
 @Composable
 fun GalleryThumbnail(lastMediaPath: String?, modifier: Modifier = Modifier) {
@@ -29,12 +27,21 @@ fun GalleryThumbnail(lastMediaPath: String?, modifier: Modifier = Modifier) {
             .size(60.dp)
             .clip(RoundedCornerShape(8.dp))
             .clickable {
-                // Open system gallery or specific file
-                val intent = Intent(Intent.ACTION_VIEW).apply {
-                    type = "image/*"
+                // FIXED: Use specific Gallery App Intent instead of generic image viewer
+                val galleryIntent = Intent(Intent.ACTION_MAIN).apply {
+                    addCategory(Intent.CATEGORY_APP_GALLERY)
                     flags = Intent.FLAG_ACTIVITY_NEW_TASK
                 }
-                context.startActivity(intent)
+                
+                // Check if a gallery app exists, otherwise fallback to generic picker
+                if (galleryIntent.resolveActivity(context.packageManager) != null) {
+                    context.startActivity(galleryIntent)
+                } else {
+                    val fallbackIntent = Intent(Intent.ACTION_PICK, android.provider.MediaStore.Images.Media.EXTERNAL_CONTENT_URI).apply {
+                        flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                    }
+                    context.startActivity(fallbackIntent)
+                }
             },
         colors = CardDefaults.cardColors(containerColor = Color.DarkGray)
     ) {
