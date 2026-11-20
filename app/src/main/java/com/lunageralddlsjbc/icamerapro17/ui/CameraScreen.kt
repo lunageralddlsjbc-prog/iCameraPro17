@@ -41,9 +41,9 @@ fun CameraScreen() {
     
     var previewViewRef by remember { mutableStateOf<androidx.camera.view.PreviewView?>(null) }
     var imageCapture by remember { mutableStateOf<ImageCapture?>(null) }
-    var videoCapture by remember { mutableStateOf<VideoCapture<Recorder>?>(null) }
+    var videoCapture by remember { mutableStateOf<VideoCapture<VideoRecordEvent>?>(null) }
     var camera by remember { mutableStateOf<Camera?>(null) }
-    var recording by remember { mutableStateOf<Recording?>(null) }
+    var activeRecording by remember { mutableStateOf<Recording?>(null) }
     var isRecording by remember { mutableStateOf(false) }
     
     val cameraExecutor = remember { Executors.newSingleThreadExecutor() }
@@ -70,8 +70,8 @@ fun CameraScreen() {
                     .setFlashMode(if (flashOn) ImageCapture.FLASH_MODE_ON else ImageCapture.FLASH_MODE_OFF)
                     .build()
                 
-                // FIXED: Use Recorder() directly instead of Recorder.builder().build()
-                videoCapture = VideoCapture.Builder(Recorder()).build()
+                // FIXED: Use VideoCapture.Builder without Recorder parameter for CameraX 1.4.1
+                videoCapture = VideoCapture.Builder().build()
                 
                 camera = when (captureMode) {
                     CaptureMode.VIDEO -> cameraProvider.bindToLifecycle(
@@ -146,12 +146,12 @@ fun CameraScreen() {
                             if (captureMode == CaptureMode.VIDEO) {
                                 if (!isRecording) {
                                     startRecording(context, videoCapture, cameraExecutor) { rec ->
-                                        recording = rec
+                                        activeRecording = rec
                                         isRecording = true
                                     }
                                 } else {
-                                    recording?.stop()
-                                    recording = null
+                                    activeRecording?.stop()
+                                    activeRecording = null
                                     isRecording = false
                                 }
                             } else {
@@ -235,30 +235,31 @@ private fun takePhoto(
 
 private fun startRecording(
     context: Context,
-    videoCapture: VideoCapture<Recorder>?,
+    videoCapture: VideoCapture<VideoRecordEvent>?,
     executor: ExecutorService,
     onStarted: (Recording) -> Unit
 ) {
     val capture = videoCapture ?: return
     
-    // FIXED: Use FileOutputOptions for CameraX 1.4.1
     val videoFile = File(
         context.getExternalFilesDir(null),
         "VID_${SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())}.mp4"
     )
     
+    // FIXED: Use FileOutputOptions for CameraX 1.4.1
     val outputFileOptions = FileOutputOptions.Builder(videoFile).build()
     
-    // FIXED: Use prepareRecording with FileOutputOptions and correct listener syntax
-    val recording = capture.output.prepareRecording(context, outputFileOptions)
+    // FIXED: prepareRecording returns PendingRecording, call start() with listener
+    val pendingRecording = capture.output.prepareRecording(context, outputFileOptions)
         .withAudioEnabled()
-        .start(executor) { event ->
-            when (event) {
-                is VideoRecordEvent.Start -> Log.d("Camera", "Recording started")
-                is VideoRecordEvent.Finalize -> Log.d("Camera", "Recording finalized")
-                is VideoRecordEvent.Status -> Log.d("Camera", "Recording status update")
-            }
+    
+    val recording = pendingRecording.start(executor) { event ->
+        when (event) {
+            is VideoRecordEvent.Start -> Log.d("Camera", "Recording started")
+            is VideoRecordEvent.Finalize -> Log.d("Camera", "Recording finalized")
+            is VideoRecordEvent.Status -> Log.d("Camera", "Status: ${event.recordingStats}")
         }
+    }
     
     onStarted(recording)
 }
