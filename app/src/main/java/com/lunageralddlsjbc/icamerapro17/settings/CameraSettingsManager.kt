@@ -9,47 +9,21 @@ import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 
-val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "camera_settings")
+val Context.cameraDataStore: DataStore<Preferences> by preferencesDataStore(name = "icamera_settings")
 
 object CameraSettingsManager {
-    private val GRID_KEY = booleanPreferencesKey("grid_enabled")
-    private val LEVEL_KEY = booleanPreferencesKey("level_enabled")
-    private val MIRROR_KEY = booleanPreferencesKey("mirror_front_camera")
-    private val LENS_CORRECTION_KEY = booleanPreferencesKey("lens_correction")
-    private val SAVE_TO_LIBRARY_KEY = booleanPreferencesKey("save_to_library")
+    private val GRID = booleanPreferencesKey("grid")
+    private val LEVEL = booleanPreferencesKey("level")
+    private val MIRROR = booleanPreferencesKey("mirror")
+    private val LENS_CORRECTION = booleanPreferencesKey("lens_correction")
     
-    fun getGridFlow(context: Context): Flow<Boolean> = 
-        context.dataStore.data.map { prefs -> prefs[GRID_KEY] ?: false }
-        
-    fun getLevelFlow(context: Context): Flow<Boolean> = 
-        context.dataStore.data.map { prefs -> prefs[LEVEL_KEY] ?: true }
-        
-    fun getMirrorFlow(context: Context): Flow<Boolean> = 
-        context.dataStore.data.map { prefs -> prefs[MIRROR_KEY] ?: false }
-        
-    fun getLensCorrectionFlow(context: Context): Flow<Boolean> = 
-        context.dataStore.data.map { prefs -> prefs[LENS_CORRECTION_KEY] ?: true }
-        
-    fun getSaveToLibraryFlow(context: Context): Flow<Boolean> = 
-        context.dataStore.data.map { prefs -> prefs[SAVE_TO_LIBRARY_KEY] ?: true }
+    fun getGridFlow(ctx: Context): Flow<Boolean> = ctx.cameraDataStore.data.map { it[GRID] ?: false }
+    fun getLevelFlow(ctx: Context): Flow<Boolean> = ctx.cameraDataStore.data.map { it[LEVEL] ?: true }
+    fun getMirrorFlow(ctx: Context): Flow<Boolean> = ctx.cameraDataStore.data.map { it[MIRROR] ?: false }
+    fun getLensCorrectionFlow(ctx: Context): Flow<Boolean> = ctx.cameraDataStore.data.map { it[LENS_CORRECTION] ?: true }
     
-    suspend fun toggleGrid(context: Context) {
-        context.dataStore.edit { it[GRID_KEY] = !(it[GRID_KEY] ?: false) }
-    }
-    
-    suspend fun toggleLevel(context: Context) {
-        context.dataStore.edit { it[LEVEL_KEY] = !(it[LEVEL_KEY] ?: true) }
-    }
-    
-    suspend fun toggleMirror(context: Context) {
-        context.dataStore.edit { it[MIRROR_KEY] = !(it[MIRROR_KEY] ?: false) }
-    }
-    
-    suspend fun toggleLensCorrection(context: Context) {
-        context.dataStore.edit { it[LENS_CORRECTION_KEY] = !(it[LENS_CORRECTION_KEY] ?: true) }
-    }
-    
-    suspend fun toggleSaveToLibrary(context: Context) {
-        context.dataStore.edit { it[SAVE_TO_LIBRARY_KEY] = !(it[SAVE_TO_LIBRARY_KEY] ?: true) }
-    }
+    suspend fun toggleGrid(ctx: Context) { ctx.cameraDataStore.edit { it[GRID] = !(it[GRID] ?: false) } }
+    suspend fun toggleLevel(ctx: Context) { ctx.cameraDataStore.edit { it[LEVEL] = !(it[LEVEL] ?: true) } }
+    suspend fun toggleMirror(ctx: Context) { ctx.cameraDataStore.edit { it[MIRROR] = !(it[MIRROR] ?: false) } }
+    suspend fun toggleLensCorrection(ctx: Context) { ctx.cameraDataStore.edit { it[LENS_CORRECTION] = !(it[LENS_CORRECTION] ?: true) } }
 }
