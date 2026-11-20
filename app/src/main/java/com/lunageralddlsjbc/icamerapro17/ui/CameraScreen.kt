@@ -48,10 +48,6 @@ import java.text.SimpleDateFormat
 import java.util.*
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
-import kotlinx.coroutines.GlobalScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.delay
 
 enum class CaptureMode { PHOTO, VIDEO, PRO }
 
@@ -61,6 +57,7 @@ fun CameraScreen() {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     
+    // Permission launcher
     val launcher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestMultiplePermissions()
     ) { perms ->
@@ -71,6 +68,7 @@ fun CameraScreen() {
         launcher.launch(arrayOf(Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO))
     }
     
+    // State variables
     var captureMode by remember { mutableStateOf(CaptureMode.PHOTO) }
     var isFrontCamera by remember { mutableStateOf(false) }
     var flashOn by remember { mutableStateOf(false) }
@@ -78,11 +76,14 @@ fun CameraScreen() {
     var isHdrEnabled by remember { mutableStateOf(true) }
     var lastMediaPath by remember { mutableStateOf<String?>(null) }
     
+    // Shutter animation state
     var isShutterPressed by remember { mutableStateOf(false) }
     var showCaptureFlash by remember { mutableStateOf(false) }
+    var isCapturing by remember { mutableStateOf(false) } // Prevent double-tap
     
     val capabilities = remember { CapabilityManager.detect(context) }
     
+    // Camera use cases
     var previewViewRef by remember { mutableStateOf<androidx.camera.view.PreviewView?>(null) }
     var imageCapture by remember { mutableStateOf<ImageCapture?>(null) }
     var videoCapture by remember { mutableStateOf<VideoCapture<Recorder>?>(null) }
@@ -92,6 +93,7 @@ fun CameraScreen() {
     
     val cameraExecutor = remember { Executors.newSingleThreadExecutor() }
     
+    // Bind camera when mode/lens/flash changes
     LaunchedEffect(captureMode, isFrontCamera, flashOn, exposureComp) {
         val cameraProviderFuture = ProcessCameraProvider.getInstance(context)
         cameraProviderFuture.addListener({
@@ -99,12 +101,16 @@ fun CameraScreen() {
                 val cameraProvider = cameraProviderFuture.get()
                 cameraProvider.unbindAll()
                 
-                val cameraSelector = if (isFrontCamera) CameraSelector.DEFAULT_FRONT_CAMERA else CameraSelector.DEFAULT_BACK_CAMERA
+                val cameraSelector = if (isFrontCamera) 
+                    CameraSelector.DEFAULT_FRONT_CAMERA 
+                else 
+                    CameraSelector.DEFAULT_BACK_CAMERA
                 
                 val preview = Preview.Builder().build().also {
                     it.setSurfaceProvider(previewViewRef?.surfaceProvider)
                 }
                 
+                // FIXED: Properly configure ImageCapture with flash
                 imageCapture = ImageCapture.Builder()
                     .setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY)
                     .setFlashMode(if (flashOn) ImageCapture.FLASH_MODE_ON else ImageCapture.FLASH_MODE_OFF)
@@ -116,18 +122,34 @@ fun CameraScreen() {
                     
                 videoCapture = VideoCapture.Builder(recorder).build()
                 
+                // Bind appropriate use cases
                 camera = when (captureMode) {
-                    CaptureMode.VIDEO -> cameraProvider.bindToLifecycle(lifecycleOwner, cameraSelector, preview, videoCapture)
-                    else -> cameraProvider.bindToLifecycle(lifecycleOwner, cameraSelector, preview, imageCapture)
+                    CaptureMode.VIDEO -> cameraProvider.bindToLifecycle(
+                        lifecycleOwner, cameraSelector, preview, videoCapture
+                    )
+                    else -> cameraProvider.bindToLifecycle(
+                        lifecycleOwner, cameraSelector, preview, imageCapture
+                    )
                 }
                 
+                // Apply Pro settings
                 if (captureMode == CaptureMode.PRO && capabilities.supportsManualExposure) {
                     camera?.cameraControl?.setExposureCompensationIndex(exposureComp)
                 }
-            } catch (e: Exception) { Log.e("Camera", "Bind failed", e) }
+                
+                // Reset recording state when switching modes
+                if (captureMode != CaptureMode.VIDEO) {
+                    isRecording = false
+                    activeRecording = null
+                }
+                
+            } catch (e: Exception) { 
+                Log.e("Camera", "Bind failed: ${e.message}", e) 
+            }
         }, ContextCompat.getMainExecutor(context))
     }
     
+    // Shutter spring animation
     val shutterScale by animateFloatAsState(
         targetValue = if (isShutterPressed) 0.8f else 1f, 
         animationSpec = spring(dampingRatio = 0.6f, stiffness = 300f),
@@ -135,10 +157,14 @@ fun CameraScreen() {
     )
     
     Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
+        // Camera Preview with Tap-to-Focus
         AndroidView(
             factory = { ctx ->
                 androidx.camera.view.PreviewView(ctx).apply {
-                    layoutParams = ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
+                    layoutParams = ViewGroup.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT, 
+                        ViewGroup.LayoutParams.MATCH_PARENT
+                    )
                     implementationMode = androidx.camera.view.PreviewView.ImplementationMode.COMPATIBLE
                     scaleType = androidx.camera.view.PreviewView.ScaleType.FILL_CENTER
                     setOnTouchListener { v, event ->
@@ -157,86 +183,164 @@ fun CameraScreen() {
             modifier = Modifier.fillMaxSize()
         )
         
-        // FIXED: Correct Box syntax for flash overlay
+        // Capture flash overlay
         if (showCaptureFlash) {
             Box(modifier = Modifier.fillMaxSize().background(Color.White.copy(alpha = 0.8f)))
         }
         
+        // IPHONE-STYLE UI OVERLAY
         Column(modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.SpaceBetween) {
+            
+            // TOP BAR
             Row(
                 modifier = Modifier.fillMaxWidth().padding(top = 50.dp, start = 16.dp, end = 16.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
+                // HDR Toggle Pill (FIXED: Now clickable)
                 Card(
                     shape = RoundedCornerShape(20.dp),
-                    colors = CardDefaults.cardColors(containerColor = Color.Black.copy(alpha = 0.6f))
+                    colors = CardDefaults.cardColors(containerColor = Color.Black.copy(alpha = 0.6f)),
+                    modifier = Modifier.clickable { isHdrEnabled = !isHdrEnabled }
                 ) {
                     Text(
-                        text = if (isHdrEnabled) "HDR ON" else "STD",
-                        color = Color.White,
+                        text = if (isHdrEnabled) "HDR ON" else "HDR OFF",
+                        color = if (isHdrEnabled) Color(0xFFFFD700) else Color.Gray,
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Bold,
                         modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
                     )
                 }
                 
+                // Right Icons: Flash + Timer (Removed mystery icon)
                 Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                     IconButton(onClick = { flashOn = !flashOn }) {
-                        Text(text = if (flashOn) "⚡" else "○", color = if (flashOn) Color(0xFFFFD700) else Color.White, fontSize = 20.sp)
+                        Text(
+                            text = if (flashOn) "⚡" else "○", 
+                            color = if (flashOn) Color(0xFFFFD700) else Color.White, 
+                            fontSize = 20.sp
+                        )
                     }
-                    IconButton(onClick = {}) { Text(text = "◑", color = Color.White, fontSize = 20.sp) }
+                    // Timer placeholder (functional later)
+                    IconButton(onClick = {}) { 
+                        Text(text = "⏱", color = Color.White.copy(alpha = 0.7f), fontSize = 20.sp) 
+                    }
                 }
             }
             
+            // BOTTOM CONTROLS
             Box(
-                modifier = Modifier.fillMaxWidth().background(brush = Brush.verticalGradient(colors = listOf(Color.Transparent, Color.Black.copy(alpha = 0.9f)))).padding(bottom = 30.dp)
+                modifier = Modifier.fillMaxWidth()
+                    .background(brush = Brush.verticalGradient(colors = listOf(Color.Transparent, Color.Black.copy(alpha = 0.9f))))
+                    .padding(bottom = 30.dp)
             ) {
-                GalleryThumbnail(lastMediaPath = lastMediaPath, modifier = Modifier.align(Alignment.BottomStart).padding(start = 24.dp, bottom = 90.dp))
+                // Gallery Thumbnail
+                GalleryThumbnail(
+                    lastMediaPath = lastMediaPath, 
+                    modifier = Modifier.align(Alignment.BottomStart).padding(start = 24.dp, bottom = 90.dp)
+                )
                 
+                // Mode Selector Pill
                 Row(
-                    modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 100.dp).clip(RoundedCornerShape(24.dp)).background(Color.Black.copy(alpha = 0.7f)).padding(4.dp),
+                    modifier = Modifier.align(Alignment.BottomCenter)
+                        .padding(bottom = 100.dp)
+                        .clip(RoundedCornerShape(24.dp))
+                        .background(Color.Black.copy(alpha = 0.7f))
+                        .padding(4.dp),
                     horizontalArrangement = Arrangement.Center
                 ) {
-                    IphoneModeTab("VIDEO", captureMode == CaptureMode.VIDEO) { captureMode = CaptureMode.VIDEO; context.getSystemService(android.os.Vibrator::class.java)?.vibrate(10) }
-                    IphoneModeTab("PHOTO", captureMode == CaptureMode.PHOTO) { captureMode = CaptureMode.PHOTO; context.getSystemService(android.os.Vibrator::class.java)?.vibrate(10) }
-                    if (capabilities.supportsManualExposure) IphoneModeTab("PRO", captureMode == CaptureMode.PRO) { captureMode = CaptureMode.PRO; context.getSystemService(android.os.Vibrator::class.java)?.vibrate(10) }
+                    IphoneModeTab("VIDEO", captureMode == CaptureMode.VIDEO) { 
+                        captureMode = CaptureMode.VIDEO 
+                        context.getSystemService(android.os.Vibrator::class.java)?.vibrate(10)
+                    }
+                    IphoneModeTab("PHOTO", captureMode == CaptureMode.PHOTO) { 
+                        captureMode = CaptureMode.PHOTO 
+                        context.getSystemService(android.os.Vibrator::class.java)?.vibrate(10)
+                    }
+                    if (capabilities.supportsManualExposure) {
+                        IphoneModeTab("PRO", captureMode == CaptureMode.PRO) { 
+                            captureMode = CaptureMode.PRO 
+                            context.getSystemService(android.os.Vibrator::class.java)?.vibrate(10)
+                        }
+                    }
                 }
                 
+                // Shutter & Flip Row
                 Row(
-                    modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 24.dp).fillMaxWidth().padding(horizontal = 40.dp),
+                    modifier = Modifier.align(Alignment.BottomCenter)
+                        .padding(bottom = 24.dp)
+                        .fillMaxWidth()
+                        .padding(horizontal = 40.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Spacer(modifier = Modifier.width(40.dp))
                     
-                    val shutterColor by animateColorAsState(targetValue = if (isRecording) Color.Red else Color.White, label = "shutter")
+                    // SHUTTER BUTTON (FIXED: Now actually captures)
+                    val shutterColor by animateColorAsState(
+                        targetValue = if (isRecording) Color.Red else Color.White, 
+                        label = "shutter"
+                    )
+                    
                     Box(
-                        modifier = Modifier.size(76.dp).scale(shutterScale).border(4.dp, Color.White.copy(alpha = 0.9f), CircleShape).padding(4.dp).background(shutterColor, CircleShape).clickable { 
-                            isShutterPressed = true
-                            showCaptureFlash = true
-                            context.getSystemService(android.os.Vibrator::class.java)?.vibrate(25)
-                            
-                            GlobalScope.launch(Dispatchers.Main) {
-                                delay(100)
-                                isShutterPressed = false
-                                delay(50)
-                                showCaptureFlash = false
+                        modifier = Modifier
+                            .size(76.dp)
+                            .scale(shutterScale)
+                            .border(4.dp, Color.White.copy(alpha = 0.9f), CircleShape)
+                            .padding(4.dp)
+                            .background(shutterColor, CircleShape)
+                            .clickable(enabled = !isCapturing) { 
+                                // Instant feedback
+                                isShutterPressed = true
+                                showCaptureFlash = true
+                                isCapturing = true
+                                context.getSystemService(android.os.Vibrator::class.java)?.vibrate(25)
+                                
+                                // Reset animations
+                                kotlinx.coroutines.GlobalScope.launch(kotlinx.coroutines.Dispatchers.Main) {
+                                    kotlinx.coroutines.delay(100)
+                                    isShutterPressed = false
+                                    kotlinx.coroutines.delay(50)
+                                    showCaptureFlash = false
+                                    kotlinx.coroutines.delay(200)
+                                    isCapturing = false
+                                }
+                                
+                                // ACTUAL CAPTURE LOGIC
+                                if (captureMode == CaptureMode.VIDEO) {
+                                    if (!isRecording) {
+                                        startRecording(context, videoCapture, cameraExecutor) { rec -> 
+                                            activeRecording = rec; isRecording = true 
+                                        }
+                                    } else {
+                                        activeRecording?.stop()
+                                        activeRecording = null
+                                        isRecording = false
+                                    }
+                                } else {
+                                    takePhoto(imageCapture, cameraExecutor, context, isHdrEnabled) { path -> 
+                                        lastMediaPath = path 
+                                    }
+                                }
                             }
-                            
-                            if (captureMode == CaptureMode.VIDEO) {
-                                if (!isRecording) startRecording(context, videoCapture, cameraExecutor) { rec -> activeRecording = rec; isRecording = true }
-                                else { activeRecording?.stop(); activeRecording = null; isRecording = false }
-                            } else takePhoto(imageCapture, cameraExecutor, context, isHdrEnabled) { path -> lastMediaPath = path }
-                        }.pointerInput(Unit) {
-                            detectTapGestures(onPress = { isShutterPressed = true; tryAwaitRelease(); isShutterPressed = false })
-                        },
+                            .pointerInput(Unit) {
+                                detectTapGestures(onPress = { 
+                                    isShutterPressed = true 
+                                    tryAwaitRelease()
+                                    isShutterPressed = false 
+                                })
+                            },
                         contentAlignment = Alignment.Center
                     ) {
-                        if (isRecording) Box(modifier = Modifier.size(24.dp).clip(RoundedCornerShape(4.dp)).background(Color.White))
+                        if (isRecording) {
+                            Box(modifier = Modifier.size(24.dp).clip(RoundedCornerShape(4.dp)).background(Color.White))
+                        }
                     }
                     
-                    IconButton(onClick = { isFrontCamera = !isFrontCamera }) { Text("🔄", color = Color.White.copy(alpha = 0.9f), fontSize = 24.sp) }
+                    // Flip Camera
+                    IconButton(onClick = { isFrontCamera = !isFrontCamera }) { 
+                        Text("🔄", color = Color.White.copy(alpha = 0.9f), fontSize = 24.sp) 
+                    }
                 }
             }
         }
@@ -247,46 +351,85 @@ fun CameraScreen() {
 fun IphoneModeTab(label: String, selected: Boolean, onClick: () -> Unit) {
     val bgColor = if (selected) Color(0xFFFFD700).copy(alpha = 0.2f) else Color.Transparent
     val textColor = if (selected) Color(0xFFFFD700) else Color.Gray
-    Box(modifier = Modifier.clip(RoundedCornerShape(20.dp)).background(bgColor).clickable { onClick() }.padding(horizontal = 20.dp, vertical = 8.dp), contentAlignment = Alignment.Center) {
-        Text(text = label, color = textColor, fontSize = 14.sp, fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium, letterSpacing = 0.5.sp)
+    Box(
+        modifier = Modifier.clip(RoundedCornerShape(20.dp))
+            .background(bgColor)
+            .clickable { onClick() }
+            .padding(horizontal = 20.dp, vertical = 8.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text = label, 
+            color = textColor, 
+            fontSize = 14.sp, 
+            fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium, 
+            letterSpacing = 0.5.sp
+        )
     }
 }
 
+// FIXED: Robust photo capture with error handling
 private fun takePhoto(imageCapture: ImageCapture?, executor: ExecutorService, context: Context, useHdr: Boolean, onSaved: (String) -> Unit) {
     val capture = imageCapture ?: return
+    
     if (useHdr) {
         val tempFiles = mutableListOf<File>()
         var completed = 0
+        
         repeat(3) { index ->
             val tempFile = File(context.cacheDir, "hdr_temp_$index.jpg")
             tempFiles.add(tempFile)
+            
             val options = ImageCapture.OutputFileOptions.Builder(tempFile).build()
             capture.takePicture(options, executor, object : ImageCapture.OnImageSavedCallback {
                 override fun onImageSaved(output: ImageCapture.OutputFileResults) {
                     completed++
                     if (completed == 3) {
-                        val finalFile = File(context.getExternalFilesDir(Environment.DIRECTORY_PICTURES), "IMG_${SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())}_HDR.jpg")
-                        GlobalScope.launch(Dispatchers.IO) {
-                            HdrProcessor.processHdrSequence(tempFiles, finalFile)
-                            saveToGallery(context, finalFile, true)
-                            onSaved(finalFile.absolutePath)
-                            tempFiles.forEach { it.delete() }
+                        val finalFile = File(
+                            context.getExternalFilesDir(Environment.DIRECTORY_PICTURES),
+                            "IMG_${SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())}_HDR.jpg"
+                        )
+                        kotlinx.coroutines.GlobalScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                            try {
+                                HdrProcessor.processHdrSequence(tempFiles, finalFile)
+                                saveToGallery(context, finalFile, true)
+                                onSaved(finalFile.absolutePath)
+                            } catch (e: Exception) {
+                                Log.e("Camera", "HDR processing failed", e)
+                            } finally {
+                                tempFiles.forEach { it.delete() }
+                            }
                         }
                     }
                 }
-                override fun onError(exc: ImageCaptureException) { Log.e("Camera", "HDR Error", exc) }
+                override fun onError(exc: ImageCaptureException) { 
+                    Log.e("Camera", "HDR capture error: ${exc.message}", exc) 
+                }
             })
         }
     } else {
         val contentValues = ContentValues().apply {
             put(MediaStore.Images.Media.DISPLAY_NAME, "IMG_${SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())}.jpg")
             put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg")
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) put(MediaStore.Images.Media.RELATIVE_PATH, Environment.DIRECTORY_PICTURES + "/iCamera Pro 17")
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                put(MediaStore.Images.Media.RELATIVE_PATH, Environment.DIRECTORY_PICTURES + "/iCamera Pro 17")
+            }
         }
-        val outputOptions = ImageCapture.OutputFileOptions.Builder(context.contentResolver, MediaStore.Images.Media.EXTERNAL_CONTENT_URI, contentValues).build()
+        val outputOptions = ImageCapture.OutputFileOptions.Builder(
+            context.contentResolver, 
+            MediaStore.Images.Media.EXTERNAL_CONTENT_URI, 
+            contentValues
+        ).build()
+        
         capture.takePicture(outputOptions, executor, object : ImageCapture.OnImageSavedCallback {
-            override fun onImageSaved(output: ImageCapture.OutputFileResults) { onSaved(output.savedUri?.path ?: "") }
-            override fun onError(exc: ImageCaptureException) { Log.e("Camera", "Error", exc) }
+            override fun onImageSaved(output: ImageCapture.OutputFileResults) { 
+                val path = output.savedUri?.path ?: ""
+                Log.d("Camera", "Photo saved: $path")
+                onSaved(path)
+            }
+            override fun onError(exc: ImageCaptureException) { 
+                Log.e("Camera", "Photo capture error: ${exc.message}", exc) 
+            }
         })
     }
 }
@@ -303,10 +446,14 @@ private fun saveToGallery(context: Context, file: File, isImage: Boolean) {
             put(MediaStore.Video.Media.RELATIVE_PATH, Environment.DIRECTORY_MOVIES + "/iCamera Pro 17")
         }
     }
+    
     val uri = if (isImage) MediaStore.Images.Media.EXTERNAL_CONTENT_URI else MediaStore.Video.Media.EXTERNAL_CONTENT_URI
+    
     context.contentResolver.insert(uri, contentValues)?.let { destUri ->
         context.contentResolver.openOutputStream(destUri)?.use { outputStream ->
-            file.inputStream().use { inputStream -> inputStream.copyTo(outputStream) }
+            file.inputStream().use { inputStream ->
+                inputStream.copyTo(outputStream)
+            }
         }
     }
 }
@@ -316,15 +463,24 @@ private fun startRecording(context: Context, videoCapture: VideoCapture<Recorder
     val contentValues = ContentValues().apply {
         put(MediaStore.Video.Media.DISPLAY_NAME, "VID_${SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())}.mp4")
         put(MediaStore.Video.Media.MIME_TYPE, "video/mp4")
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) put(MediaStore.Video.Media.RELATIVE_PATH, Environment.DIRECTORY_MOVIES + "/iCamera Pro 17")
-    }
-    val outputFileOptions = MediaStoreOutputOptions.Builder(context.contentResolver, MediaStore.Video.Media.EXTERNAL_CONTENT_URI).setContentValues(contentValues).build()
-    val recording = capture.output.prepareRecording(context, outputFileOptions).withAudioEnabled().start(executor) { event ->
-        when (event) {
-            is VideoRecordEvent.Start -> Log.d("Camera", "Recording started")
-            is VideoRecordEvent.Finalize -> Log.d("Camera", "Video saved")
-            else -> {}
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            put(MediaStore.Video.Media.RELATIVE_PATH, Environment.DIRECTORY_MOVIES + "/iCamera Pro 17")
         }
     }
+    val outputFileOptions = MediaStoreOutputOptions.Builder(
+        context.contentResolver, 
+        MediaStore.Video.Media.EXTERNAL_CONTENT_URI
+    ).setContentValues(contentValues).build()
+    
+    val recording = capture.output.prepareRecording(context, outputFileOptions)
+        .withAudioEnabled()
+        .start(executor) { event ->
+            when (event) {
+                is VideoRecordEvent.Start -> Log.d("Camera", "Recording started")
+                is VideoRecordEvent.Finalize -> Log.d("Camera", "Video saved")
+                is VideoRecordEvent.Status -> {}
+            }
+        }
+    
     onStarted(recording)
 }
