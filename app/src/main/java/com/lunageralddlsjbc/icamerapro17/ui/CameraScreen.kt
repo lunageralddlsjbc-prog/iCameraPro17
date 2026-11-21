@@ -4,6 +4,9 @@ import android.Manifest
 import android.content.ContentValues
 import android.content.Context
 import android.graphics.BitmapFactory
+import android.graphics.Bitmap
+import android.graphics.Matrix
+import androidx.exifinterface.media.ExifInterface
 import android.net.Uri
 import android.os.Build
 import android.os.Environment
@@ -58,10 +61,15 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-private enum class CameraAspectRatio(val label: String, val width: Int, val height: Int) {
-    RATIO_4_3("4:3", 4, 3),
-    RATIO_1_1("1:1", 1, 1),
-    RATIO_16_9("16:9", 16, 9)
+private enum class CameraAspectRatio(
+    val label: String,
+    val outputWidth: Int,
+    val outputHeight: Int
+) {
+    RATIO_4_3("4:3", 1200, 900),
+    RATIO_1_1("1:1", 1080, 1080),
+    RATIO_16_9("16:9", 1600, 900),
+    RATIO_20_9("20:9", 720, 1600)
 }
 
 @Composable
@@ -111,49 +119,41 @@ private fun ZoomRuler(
 
     Canvas(
         modifier = modifier
-            .fillMaxWidth()
-            .height(54.dp)
+            .fillMaxWidth(0.72f)
+            .height(26.dp)
             .pointerInput(minZoom, maxZoom) {
-                fun valueAt(x: Float): Float {
-                    val fraction = (x / size.width.toFloat()).coerceIn(0f, 1f)
-                    return minZoom + fraction * range
-                }
-
-                detectTapGestures { offset ->
-                    onZoomChange(valueAt(offset.x))
+                detectTapGestures { point ->
+                    val fraction = (point.x / size.width).coerceIn(0f, 1f)
+                    onZoomChange(minZoom + fraction * range)
                 }
             }
             .pointerInput(minZoom, maxZoom) {
-                fun valueAt(x: Float): Float {
-                    val fraction = (x / size.width.toFloat()).coerceIn(0f, 1f)
-                    return minZoom + fraction * range
-                }
-
                 detectDragGestures(
-                    onDragStart = { offset ->
-                        onZoomChange(valueAt(offset.x))
+                    onDragStart = { point ->
+                        val fraction = (point.x / size.width).coerceIn(0f, 1f)
+                        onZoomChange(minZoom + fraction * range)
                     },
                     onDrag = { change, _ ->
                         change.consume()
-                        onZoomChange(valueAt(change.position.x))
+                        val fraction = (change.position.x / size.width).coerceIn(0f, 1f)
+                        onZoomChange(minZoom + fraction * range)
                     }
                 )
             }
     ) {
         val centerY = size.height / 2f
-        val tickCount =  fiftyTicks
+        val tickCount = 41
         val spacing = size.width / (tickCount - 1)
 
         for (i in 0 until tickCount) {
             val x = i * spacing
-            val major = i % 5 == 0
-            val tickHeight = if (major) 17.dp.toPx() else 9.dp.toPx()
+            val tickHeight = if (i % 5 == 0) 9.dp.toPx() else 4.dp.toPx()
 
             drawLine(
                 color = Color.White.copy(alpha = 0.9f),
                 start = Offset(x, centerY - tickHeight / 2f),
                 end = Offset(x, centerY + tickHeight / 2f),
-                strokeWidth = 2.dp.toPx()
+                strokeWidth = 1.dp.toPx()
             )
         }
 
@@ -162,14 +162,12 @@ private fun ZoomRuler(
 
         drawLine(
             color = Color(0xFF00D889),
-            start = Offset(markerX, centerY - 25.dp.toPx()),
-            end = Offset(markerX, centerY + 25.dp.toPx()),
-            strokeWidth = 4.dp.toPx()
+            start = Offset(markerX, centerY - 12.dp.toPx()),
+            end = Offset(markerX, centerY + 12.dp.toPx()),
+            strokeWidth = 2.dp.toPx()
         )
     }
 }
-
-private const val fiftyTicks = 51
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -193,6 +191,15 @@ fun CameraScreen() {
     var gridEnabled by remember { mutableStateOf(false) }
     var selectedAspectRatio by remember { mutableStateOf(CameraAspectRatio.RATIO_4_3) }
     var selectedZoomRatio by remember { mutableStateOf(1f) }
+    var showZoomRuler by remember { mutableStateOf(false) }
+    var zoomRulerActivity by remember { mutableStateOf(0) }
+
+    LaunchedEffect(showZoomRuler, zoomRulerActivity) {
+        if (showZoomRuler) {
+            delay(2500)
+            showZoomRuler = false
+        }
+    }
 
     var previewViewRef by remember { mutableStateOf<androidx.camera.view.PreviewView?>(null) }
     var camera by remember { mutableStateOf<Camera?>(null) } // CRITICAL: Save Camera instance
@@ -232,7 +239,10 @@ fun CameraScreen() {
 
                 // Keep the captured image crop synchronized with the selected ratio.
                 val viewPort = ViewPort.Builder(
-                    Rational(selectedAspectRatio.width, selectedAspectRatio.height),
+                    Rational(
+                        selectedAspectRatio.outputWidth,
+                        selectedAspectRatio.outputHeight
+                    ),
                     rotation
                 )
                     .setScaleType(ViewPort.FILL_CENTER)
@@ -280,10 +290,13 @@ fun CameraScreen() {
         val isPortrait = displayRotation == android.view.Surface.ROTATION_0 ||
             displayRotation == android.view.Surface.ROTATION_180
 
+        val outputRatio = selectedAspectRatio.outputWidth.toFloat() /
+            selectedAspectRatio.outputHeight.toFloat()
+
         val previewAspectRatio = if (isPortrait) {
-            selectedAspectRatio.height.toFloat() / selectedAspectRatio.width.toFloat()
+            outputRatio
         } else {
-            selectedAspectRatio.width.toFloat() / selectedAspectRatio.height.toFloat()
+            1f / outputRatio
         }
         val previewWidth = minOf(maxWidth, maxHeight * previewAspectRatio)
         val previewHeight = previewWidth / previewAspectRatio
@@ -331,7 +344,7 @@ fun CameraScreen() {
                 drawLine(c, Offset(0f, h / 3f), Offset(w, h / 3f), 2f); drawLine(c, Offset(0f, 2f * h / 3f), Offset(w, 2f * h / 3f), 2f)
             }
         }
-        // Center zoom readout and draggable ruler, matching the reference camera UI.
+        // The zoom value stays visible. Tap it to reveal or hide the small ruler.
         val currentZoomState = camera?.cameraInfo?.zoomState?.value
         val minZoom = currentZoomState?.minZoomRatio ?: 1f
         val maxZoom = currentZoomState?.maxZoomRatio ?: 1f
@@ -348,21 +361,30 @@ fun CameraScreen() {
                 color = Color.White,
                 fontSize = 48.sp,
                 fontWeight = FontWeight.Normal,
-                modifier = Modifier.align(Alignment.Center)
+                modifier = Modifier
+                    .align(Alignment.Center)
+                    .clickable {
+                        showZoomRuler = !showZoomRuler
+                        zoomRulerActivity++
+                    }
+                    .padding(8.dp)
             )
 
-            ZoomRuler(
-                zoom = selectedZoomRatio.coerceIn(minZoom, safeMaxZoom),
-                minZoom = minZoom,
-                maxZoom = safeMaxZoom,
-                onZoomChange = { value ->
-                    selectedZoomRatio = value
-                    camera?.cameraControl?.setZoomRatio(value)
-                },
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .padding(bottom = 150.dp)
-            )
+            if (showZoomRuler) {
+                ZoomRuler(
+                    zoom = selectedZoomRatio.coerceIn(minZoom, safeMaxZoom),
+                    minZoom = minZoom,
+                    maxZoom = safeMaxZoom,
+                    onZoomChange = { value ->
+                        selectedZoomRatio = value
+                        camera?.cameraControl?.setZoomRatio(value)
+                        zoomRulerActivity++
+                    },
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .padding(bottom = 8.dp)
+                )
+            }
         }
 
         if (showCaptureFlash) Box(modifier = Modifier.fillMaxSize().background(Color.White.copy(alpha = 0.55f)))
@@ -416,7 +438,7 @@ fun CameraScreen() {
                             if (!isRecording) {
                                 showCaptureFlash = true
                                 GlobalScope.launch(Dispatchers.Main) { delay(150); showCaptureFlash = false }
-                                takePhoto(imageCapture, cameraExecutor, context) { uri -> 
+                                takePhoto(imageCapture, cameraExecutor, context, selectedAspectRatio) { uri -> 
                                     lastMediaUri = uri
                                     GlobalScope.launch(Dispatchers.IO) {
                                         try {
@@ -465,8 +487,15 @@ fun CameraScreen() {
     }
 }
 
-private fun takePhoto(imageCapture: ImageCapture?, executor: ExecutorService, context: Context, onSaved: (Uri) -> Unit) {
+private fun takePhoto(
+    imageCapture: ImageCapture?,
+    executor: ExecutorService,
+    context: Context,
+    aspectRatio: CameraAspectRatio,
+    onSaved: (Uri) -> Unit
+) {
     if (imageCapture == null) return
+
     val name = "IMG_${SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())}.jpg"
     val contentValues = ContentValues().apply {
         put(MediaStore.Images.Media.DISPLAY_NAME, name)
@@ -475,11 +504,118 @@ private fun takePhoto(imageCapture: ImageCapture?, executor: ExecutorService, co
             put(MediaStore.Images.Media.RELATIVE_PATH, Environment.DIRECTORY_PICTURES + "/iCamera Pro 17")
         }
     }
-    val outputOptions = ImageCapture.OutputFileOptions.Builder(context.contentResolver, MediaStore.Images.Media.EXTERNAL_CONTENT_URI, contentValues).build()
+
+    val outputOptions = ImageCapture.OutputFileOptions.Builder(
+        context.contentResolver,
+        MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+        contentValues
+    ).build()
+
     imageCapture.takePicture(outputOptions, executor, object : ImageCapture.OnImageSavedCallback {
         override fun onImageSaved(output: ImageCapture.OutputFileResults) {
-            output.savedUri?.let { onSaved(it) }
+            output.savedUri?.let { uri ->
+                try {
+                    normalizeCapturedPhoto(context, uri, aspectRatio)
+                } catch (e: Exception) {
+                    Log.e("Camera", "Photo resize/crop failed: ${e.message}", e)
+                }
+                ContextCompat.getMainExecutor(context).execute {
+                    onSaved(uri)
+                }
+            }
         }
-        override fun onError(exc: ImageCaptureException) { Log.e("Camera", "Capture failed: ${exc.message}") }
+
+        override fun onError(exc: ImageCaptureException) {
+            Log.e("Camera", "Capture failed: ${exc.message}", exc)
+        }
     })
+}
+
+/**
+ * Applies JPEG orientation, center-crops without stretching, and saves the
+ * exact requested pixel dimensions back to the same MediaStore image.
+ */
+private fun normalizeCapturedPhoto(
+    context: Context,
+    uri: Uri,
+    aspectRatio: CameraAspectRatio
+) {
+    val resolver = context.contentResolver
+
+    val orientation = resolver.openInputStream(uri)?.use { input ->
+        ExifInterface(input).getAttributeInt(
+            ExifInterface.TAG_ORIENTATION,
+            ExifInterface.ORIENTATION_NORMAL
+        )
+    } ?: ExifInterface.ORIENTATION_NORMAL
+
+    val decoded = resolver.openInputStream(uri)?.use { input ->
+        BitmapFactory.decodeStream(input)
+    } ?: throw IllegalStateException("Could not decode captured photo")
+
+    val matrix = Matrix()
+    when (orientation) {
+        ExifInterface.ORIENTATION_FLIP_HORIZONTAL -> matrix.setScale(-1f, 1f)
+        ExifInterface.ORIENTATION_ROTATE_180 -> matrix.setRotate(180f)
+        ExifInterface.ORIENTATION_FLIP_VERTICAL -> matrix.setScale(1f, -1f)
+        ExifInterface.ORIENTATION_TRANSPOSE -> {
+            matrix.setRotate(90f)
+            matrix.postScale(-1f, 1f)
+        }
+        ExifInterface.ORIENTATION_ROTATE_90 -> matrix.setRotate(90f)
+        ExifInterface.ORIENTATION_TRANSVERSE -> {
+            matrix.setRotate(-90f)
+            matrix.postScale(-1f, 1f)
+        }
+        ExifInterface.ORIENTATION_ROTATE_270 -> matrix.setRotate(-90f)
+    }
+
+    val oriented = if (!matrix.isIdentity) {
+        Bitmap.createBitmap(decoded, 0, 0, decoded.width, decoded.height, matrix, true)
+    } else {
+        decoded
+    }
+
+    val targetRatio = aspectRatio.outputWidth.toFloat() / aspectRatio.outputHeight.toFloat()
+    val sourceRatio = oriented.width.toFloat() / oriented.height.toFloat()
+
+    val cropWidth: Int
+    val cropHeight: Int
+
+    if (sourceRatio > targetRatio) {
+        cropHeight = oriented.height
+        cropWidth = (cropHeight * targetRatio).toInt().coerceAtLeast(1)
+    } else {
+        cropWidth = oriented.width
+        cropHeight = (cropWidth / targetRatio).toInt().coerceAtLeast(1)
+    }
+
+    val left = (oriented.width - cropWidth) / 2
+    val top = (oriented.height - cropHeight) / 2
+
+    val cropped = Bitmap.createBitmap(oriented, left, top, cropWidth, cropHeight)
+    val resized = Bitmap.createScaledBitmap(
+        cropped,
+        aspectRatio.outputWidth,
+        aspectRatio.outputHeight,
+        true
+    )
+
+    try {
+        resolver.openOutputStream(uri, "wt")?.use { output ->
+            if (!resized.compress(Bitmap.CompressFormat.JPEG, 95, output)) {
+                throw IllegalStateException("Could not save resized JPEG")
+            }
+        } ?: throw IllegalStateException("Could not reopen photo for saving")
+    } finally {
+        if (resized !== cropped) resized.recycle()
+        if (cropped !== oriented) cropped.recycle()
+        if (oriented !== decoded) oriented.recycle()
+        decoded.recycle()
+    }
+
+    Log.i(
+        "Camera",
+        "Saved ${aspectRatio.label}: ${aspectRatio.outputWidth}x${aspectRatio.outputHeight}"
+    )
 }
