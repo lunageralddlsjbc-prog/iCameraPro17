@@ -62,6 +62,7 @@ import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlin.math.roundToInt
 
 private enum class CameraAspectRatio(
     val label: String,
@@ -203,6 +204,10 @@ fun CameraScreen() {
         mutableStateOf(cameraSettings.getBoolean("keep_original_backup", false))
     }
 
+    var extendedExposureEnabled by remember {
+        mutableStateOf(cameraSettings.getBoolean("extended_exposure", false))
+    }
+
     var selectedAspectRatio by remember { mutableStateOf(CameraAspectRatio.RATIO_4_3) }
     var selectedZoomRatio by remember { mutableStateOf(1f) }
     var showZoomRuler by remember { mutableStateOf(false) }
@@ -295,6 +300,34 @@ fun CameraScreen() {
     }
     
     LaunchedEffect(flashOn) { imageCapture?.flashMode = if (flashOn) ImageCapture.FLASH_MODE_ON else ImageCapture.FLASH_MODE_OFF }
+
+    // ISO 50-style extended exposure: approximately -1 EV using the
+    // camera's advertised compensation step and supported index range.
+    // This does not change the sensor's native ISO floor.
+    LaunchedEffect(camera, extendedExposureEnabled) {
+        val activeCamera = camera ?: return@LaunchedEffect
+        try {
+            val exposureState = activeCamera.cameraInfo.exposureState
+            val range = exposureState.exposureCompensationRange
+            val step = exposureState.exposureCompensationStep.toDouble()
+
+            val requestedIndex = if (extendedExposureEnabled && step > 0.0) {
+                (-1.0 / step).roundToInt().coerceIn(range.lower, range.upper)
+            } else {
+                0.coerceIn(range.lower, range.upper)
+            }
+
+            activeCamera.cameraControl.setExposureCompensationIndex(requestedIndex)
+                .addListener(
+                    {
+                        Log.d("Camera", "Extended exposure index applied: $requestedIndex")
+                    },
+                    ContextCompat.getMainExecutor(context)
+                )
+        } catch (e: Exception) {
+            Log.e("Camera", "Could not apply extended exposure mode", e)
+        }
+    }
     val shutterScale by animateFloatAsState(targetValue = if (isShutterPressed) 0.8f else 1f, animationSpec = spring(dampingRatio = 0.6f, stiffness = 300f), label = "shutter")
     
     BoxWithConstraints(modifier = Modifier.fillMaxSize().background(Color.Black)) {
@@ -441,6 +474,27 @@ fun CameraScreen() {
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Bold,
                         modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+                    )
+                }
+
+                Card(
+                    shape = RoundedCornerShape(20.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = if (extendedExposureEnabled) Color(0xFF174D3A) else Color.Black.copy(alpha = 0.6f)
+                    ),
+                    modifier = Modifier.clickable {
+                        extendedExposureEnabled = !extendedExposureEnabled
+                        cameraSettings.edit()
+                            .putBoolean("extended_exposure", extendedExposureEnabled)
+                            .apply()
+                    }
+                ) {
+                    Text(
+                        text = if (extendedExposureEnabled) "EXT -1EV ON" else "EXT OFF",
+                        color = if (extendedExposureEnabled) Color(0xFF00D889) else Color.LightGray,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 7.dp)
                     )
                 }
                 Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.Center) {
