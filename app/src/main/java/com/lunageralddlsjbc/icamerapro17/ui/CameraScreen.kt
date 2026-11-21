@@ -9,6 +9,7 @@ import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
 import android.util.Log
+import android.util.Rational
 import android.view.HapticFeedbackConstants
 import android.view.ViewGroup
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -56,6 +57,46 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
+private enum class CameraAspectRatio(val label: String, val width: Int, val height: Int) {
+    RATIO_4_3("4:3", 4, 3),
+    RATIO_1_1("1:1", 1, 1),
+    RATIO_16_9("16:9", 16, 9)
+}
+
+@Composable
+private fun AspectRatioMenu(
+    selected: CameraAspectRatio,
+    onSelected: (CameraAspectRatio) -> Unit
+) {
+    var expanded by remember { mutableStateOf(false) }
+    Box {
+        Card(
+            shape = RoundedCornerShape(20.dp),
+            colors = CardDefaults.cardColors(containerColor = Color.Black.copy(alpha = 0.6f)),
+            modifier = Modifier.clickable { expanded = true }
+        ) {
+            Text(
+                text = "${selected.label}  ▾",
+                color = Color.White,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.padding(horizontal = 14.dp, vertical = 7.dp)
+            )
+        }
+        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            CameraAspectRatio.values().forEach { ratio ->
+                DropdownMenuItem(
+                    text = { Text(ratio.label, fontWeight = if (ratio == selected) FontWeight.Bold else FontWeight.Normal) },
+                    onClick = {
+                        expanded = false
+                        if (ratio != selected) onSelected(ratio)
+                    }
+                )
+            }
+        }
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CameraScreen() {
@@ -76,6 +117,7 @@ fun CameraScreen() {
     var showCaptureFlash by remember { mutableStateOf(false) }
     var photoScore by remember { mutableStateOf<PhotoScore?>(null) }
     var gridEnabled by remember { mutableStateOf(false) }
+    var selectedAspectRatio by remember { mutableStateOf(CameraAspectRatio.RATIO_4_3) }
     
     var previewViewRef by remember { mutableStateOf<androidx.camera.view.PreviewView?>(null) }
     var camera by remember { mutableStateOf<Camera?>(null) } // CRITICAL: Save Camera instance
@@ -85,7 +127,7 @@ fun CameraScreen() {
     var isRecording by remember { mutableStateOf(false) }
     val cameraExecutor = remember { Executors.newSingleThreadExecutor() }
     
-    LaunchedEffect(isFrontCamera, permissionsGranted) {
+    LaunchedEffect(isFrontCamera, permissionsGranted, selectedAspectRatio, previewViewRef) {
         if (!permissionsGranted) return@LaunchedEffect
         val cameraProviderFuture = ProcessCameraProvider.getInstance(context)
         cameraProviderFuture.addListener({
@@ -94,13 +136,44 @@ fun CameraScreen() {
                 cameraProvider.unbindAll()
                 val cameraSelector = if (isFrontCamera) CameraSelector.DEFAULT_FRONT_CAMERA else CameraSelector.DEFAULT_BACK_CAMERA
                 
-                val preview = Preview.Builder().build().also { it.setSurfaceProvider(previewViewRef?.surfaceProvider) }
-                val newImageCapture = ImageCapture.Builder().setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY).setFlashMode(if (flashOn) ImageCapture.FLASH_MODE_ON else ImageCapture.FLASH_MODE_OFF).build()
-                val recorder = Recorder.Builder().setQualitySelector(QualitySelector.from(Quality.HIGHEST)).build()
-                val newVideoCapture = VideoCapture.Builder(recorder).build()
-                
-                // SAVE THE CAMERA INSTANCE HERE
-                val cam = cameraProvider.bindToLifecycle(lifecycleOwner, cameraSelector, preview, newImageCapture, newVideoCapture)
+                val rotation = previewViewRef?.display?.rotation ?: android.view.Surface.ROTATION_0
+                val preview = Preview.Builder()
+                    .setTargetRotation(rotation)
+                    .build()
+                    .also { it.setSurfaceProvider(previewViewRef?.surfaceProvider) }
+
+                val newImageCapture = ImageCapture.Builder()
+                    .setTargetRotation(rotation)
+                    .setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY)
+                    .setFlashMode(if (flashOn) ImageCapture.FLASH_MODE_ON else ImageCapture.FLASH_MODE_OFF)
+                    .build()
+
+                val recorder = Recorder.Builder()
+                    .setQualitySelector(QualitySelector.from(Quality.HIGHEST))
+                    .build()
+                val newVideoCapture = VideoCapture.Builder(recorder)
+                    .setTargetRotation(rotation)
+                    .build()
+
+                val viewPort = ViewPort.Builder(
+                    Rational(selectedAspectRatio.width, selectedAspectRatio.height),
+                    rotation
+                )
+                    .setScaleType(ViewPort.FILL_CENTER)
+                    .build()
+
+                val useCaseGroup = UseCaseGroup.Builder()
+                    .setViewPort(viewPort)
+                    .addUseCase(preview)
+                    .addUseCase(newImageCapture)
+                    .addUseCase(newVideoCapture)
+                    .build()
+
+                val cam = cameraProvider.bindToLifecycle(
+                    lifecycleOwner,
+                    cameraSelector,
+                    useCaseGroup
+                )
                 camera = cam
                 imageCapture = newImageCapture
                 videoCapture = newVideoCapture
@@ -152,11 +225,29 @@ fun CameraScreen() {
         if (showCaptureFlash) Box(modifier = Modifier.fillMaxSize().background(Color.White.copy(alpha = 0.55f)))
         
         Column(modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.SpaceBetween) {
-            Row(modifier = Modifier.fillMaxWidth().padding(top = 50.dp, start = 16.dp, end = 16.dp), horizontalArrangement = Arrangement.SpaceBetween) {
-                Card(shape = RoundedCornerShape(20.dp), colors = CardDefaults.cardColors(containerColor = Color.Black.copy(alpha = 0.6f)), modifier = Modifier.clickable { gridEnabled = !gridEnabled }) {
-                    Text(text = if (gridEnabled) "GRID ON" else "GRID OFF", color = if (gridEnabled) Color(0xFFFFD700) else Color.Gray, fontSize = 12.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(top = 50.dp, start = 16.dp, end = 16.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Card(
+                    shape = RoundedCornerShape(20.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color.Black.copy(alpha = 0.6f)),
+                    modifier = Modifier.clickable { gridEnabled = !gridEnabled }
+                ) {
+                    Text(
+                        text = if (gridEnabled) "GRID ON" else "GRID OFF",
+                        color = if (gridEnabled) Color(0xFFFFD700) else Color.Gray,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+                    )
                 }
-                IconButton(onClick = { flashOn = !flashOn }) { Text(text = if (flashOn) "⚡" else "○", color = if (flashOn) Color(0xFFFFD700) else Color.White, fontSize = 24.sp) }
+                Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.Center) {
+                    AspectRatioMenu(selectedAspectRatio) { selectedAspectRatio = it }
+                }
+                IconButton(onClick = { flashOn = !flashOn }) {
+                    Text(text = if (flashOn) "⚡" else "○", color = if (flashOn) Color(0xFFFFD700) else Color.White, fontSize = 24.sp)
+                }
             }
             
             Box(modifier = Modifier.fillMaxWidth().background(brush = Brush.verticalGradient(colors = listOf(Color.Transparent, Color.Black.copy(alpha = 0.9f)))).padding(bottom = 30.dp)) {
