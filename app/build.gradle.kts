@@ -36,12 +36,13 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.7.0")
     implementation("androidx.activity:activity-compose:1.8.2")
 
-    // Compose BOM (Fixed version format: 2024.04.01)
+    // Compose BOM (CORRECT FORMAT WITH DOTS: 2024.04.01)
     val composeBom = platform("androidx.compose:compose-bom:2024.04.01")
     implementation(composeBom)
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.ui:ui-graphics")
     implementation("androidx.compose.material3:material3")
+    // Explicitly version ui-tooling to prevent BOM resolution issues
     debugImplementation("androidx.compose.ui:ui-tooling:1.6.1")
 
     // CameraX
