@@ -25,6 +25,7 @@ data class CameraCapability(
     val isoRange: String?,
     val exposureTimeRange: String?,
     val exposureCompensationRange: String?,
+    val exposureCompensationStep: String?,
     val autofocusModes: List<Int>,
     val opticalStabilizationModes: List<Int>,
     val videoStabilizationModes: List<Int>,
@@ -88,6 +89,7 @@ object CameraCapabilityManager {
                 val iso = c.get(CameraCharacteristics.SENSOR_INFO_SENSITIVITY_RANGE)
                 val exposure = c.get(CameraCharacteristics.SENSOR_INFO_EXPOSURE_TIME_RANGE)
                 val compensation = c.get(CameraCharacteristics.CONTROL_AE_COMPENSATION_RANGE)
+                val compensationStep = c.get(CameraCharacteristics.CONTROL_AE_COMPENSATION_STEP)
                 val fps = c.get(CameraCharacteristics.CONTROL_AE_AVAILABLE_TARGET_FPS_RANGES)
                 val zoomRange = if (Build.VERSION.SDK_INT >= 30) {
                     c.get(CameraCharacteristics.CONTROL_ZOOM_RATIO_RANGE)
@@ -110,6 +112,9 @@ object CameraCapabilityManager {
                     isoRange = iso?.let { "${it.lower}–${it.upper}" },
                     exposureTimeRange = exposure?.let { "${it.lower}–${it.upper} ns" },
                     exposureCompensationRange = compensation?.let { "${it.lower}–${it.upper}" },
+                    exposureCompensationStep = compensationStep?.let {
+                        "${it.numerator}/${it.denominator} EV per index"
+                    },
                     autofocusModes = c.get(CameraCharacteristics.CONTROL_AF_AVAILABLE_MODES)?.toList().orEmpty(),
                     opticalStabilizationModes = c.get(CameraCharacteristics.LENS_INFO_AVAILABLE_OPTICAL_STABILIZATION)?.toList().orEmpty(),
                     videoStabilizationModes = c.get(CameraCharacteristics.CONTROL_AVAILABLE_VIDEO_STABILIZATION_MODES)?.toList().orEmpty(),
