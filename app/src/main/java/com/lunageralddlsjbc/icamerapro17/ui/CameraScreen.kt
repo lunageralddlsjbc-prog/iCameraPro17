@@ -193,6 +193,7 @@ fun CameraScreen() {
     var photoScore by remember { mutableStateOf<PhotoScore?>(null) }
     var gridEnabled by remember { mutableStateOf(false) }
     var hardwareReport by remember { mutableStateOf<String?>(null) }
+    var aeAfLocked by remember { mutableStateOf(false) }
 
     val cameraSettings = remember {
         context.getSharedPreferences("icamera_settings", Context.MODE_PRIVATE)
@@ -378,15 +379,37 @@ fun CameraScreen() {
                         layoutParams = ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
                         implementationMode = androidx.camera.view.PreviewView.ImplementationMode.COMPATIBLE
                         scaleType = androidx.camera.view.PreviewView.ScaleType.FILL_CENTER
-                        setOnTouchListener { v, event ->
-                            if (event.action == android.view.MotionEvent.ACTION_DOWN) {
-                                v.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
-                                val factory = androidx.camera.core.SurfaceOrientedMeteringPointFactory(1f, 1f)
-                                // USE THE SAVED CAMERA INSTANCE FOR FOCUS
-                                camera?.cameraControl?.startFocusAndMetering(
-                                    FocusMeteringAction.Builder(factory.createPoint(event.x / v.width, event.y / v.height)).build()
-                                )
+                        val focusGestureDetector = android.view.GestureDetector(
+                            ctx,
+                            object : android.view.GestureDetector.SimpleOnGestureListener() {
+                                private fun focusAt(event: android.view.MotionEvent, lock: Boolean) {
+                                    if (v.width <= 0 || v.height <= 0) return
+                                    val pointFactory = SurfaceOrientedMeteringPointFactory(1f, 1f)
+                                    val point = pointFactory.createPoint(
+                                        (event.x / v.width).coerceIn(0f, 1f),
+                                        (event.y / v.height).coerceIn(0f, 1f)
+                                    )
+                                    val actionBuilder = FocusMeteringAction.Builder(point)
+                                    if (lock) actionBuilder.disableAutoCancel()
+                                    camera?.cameraControl?.startFocusAndMetering(actionBuilder.build())
+                                    aeAfLocked = lock
+                                    v.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                                }
+
+                                override fun onDown(event: android.view.MotionEvent): Boolean = true
+
+                                override fun onSingleTapUp(event: android.view.MotionEvent): Boolean {
+                                    focusAt(event, false)
+                                    return true
+                                }
+
+                                override fun onLongPress(event: android.view.MotionEvent) {
+                                    focusAt(event, true)
+                                }
                             }
+                        )
+                        setOnTouchListener { _, event ->
+                            focusGestureDetector.onTouchEvent(event)
                             true
                         }
                     }.also { previewViewRef = it }
@@ -435,6 +458,20 @@ fun CameraScreen() {
                     }
                     .padding(8.dp)
             )
+
+            if (aeAfLocked) {
+                Text(
+                    text = "AE/AF LOCKED  •  TAP TO UNLOCK",
+                    color = Color.White,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .padding(top = 18.dp)
+                        .background(Color.Black.copy(alpha = 0.65f), RoundedCornerShape(16.dp))
+                        .padding(horizontal = 12.dp, vertical = 7.dp)
+                )
+            }
 
             if (showZoomRuler) {
                 ZoomRuler(
