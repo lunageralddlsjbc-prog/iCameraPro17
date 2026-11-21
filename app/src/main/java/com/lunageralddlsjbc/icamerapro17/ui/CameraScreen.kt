@@ -132,7 +132,9 @@ fun CameraScreen() {
                             if (event.action == android.view.MotionEvent.ACTION_DOWN) {
                                 v.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
                                 val factory = androidx.camera.core.SurfaceOrientedMeteringPointFactory(1f, 1f)
-                                imageCapture?.cameraControl?.startFocusAndMetering(FocusMeteringAction.Builder(factory.createPoint(event.x / v.width, event.y / v.height)).build())
+                                imageCapture?.let { ic ->
+                                    ic.cameraControl.startFocusAndMetering(FocusMeteringAction.Builder(factory.createPoint(event.x / v.width, event.y / v.height)).build())
+                                }
                             }
                             true
                         }
