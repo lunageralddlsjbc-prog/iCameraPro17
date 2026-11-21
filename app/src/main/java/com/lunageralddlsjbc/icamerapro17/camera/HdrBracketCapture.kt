@@ -105,7 +105,7 @@ object HdrBracketCapture {
         }
     }
 
-    private suspend fun awaitExposure(future: ListenableFuture<Void>) =
+    private suspend fun awaitExposure(future: ListenableFuture<Int>) =
         suspendCancellableCoroutine<Unit> { continuation ->
             future.addListener({
                 try {
