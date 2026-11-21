@@ -52,6 +52,7 @@ import androidx.core.content.ContextCompat
 import com.lunageralddlsjbc.icamerapro17.ai.ImageQualityScorer
 import com.lunageralddlsjbc.icamerapro17.ai.AutoPhotoEnhancer
 import com.lunageralddlsjbc.icamerapro17.ai.PhotoScore
+import com.lunageralddlsjbc.icamerapro17.camera.CameraHardwareInspector
 import java.text.SimpleDateFormat
 import java.util.*
 import java.util.concurrent.ExecutorService
@@ -190,6 +191,7 @@ fun CameraScreen() {
     var showCaptureFlash by remember { mutableStateOf(false) }
     var photoScore by remember { mutableStateOf<PhotoScore?>(null) }
     var gridEnabled by remember { mutableStateOf(false) }
+    var hardwareReport by remember { mutableStateOf<String?>(null) }
 
     val cameraSettings = remember {
         context.getSharedPreferences("icamera_settings", Context.MODE_PRIVATE)
@@ -409,6 +411,28 @@ fun CameraScreen() {
                 Card(
                     shape = RoundedCornerShape(20.dp),
                     colors = CardDefaults.cardColors(containerColor = Color.Black.copy(alpha = 0.6f)),
+                    modifier = Modifier.clickable {
+                        GlobalScope.launch(Dispatchers.IO) {
+                            val report = try {
+                                CameraHardwareInspector.createReport(context)
+                            } catch (e: Exception) {
+                                "Camera inspection failed: ${e.message}"
+                            }
+                            withContext(Dispatchers.Main) { hardwareReport = report }
+                        }
+                    }
+                ) {
+                    Text(
+                        text = "DEVICE",
+                        color = Color(0xFF00D889),
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                    )
+                }
+                Card(
+                    shape = RoundedCornerShape(20.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color.Black.copy(alpha = 0.6f)),
                     modifier = Modifier.clickable { gridEnabled = !gridEnabled }
                 ) {
                     Text(
@@ -497,6 +521,28 @@ fun CameraScreen() {
         }
     }
     
+    if (hardwareReport != null) {
+        AlertDialog(
+            onDismissRequest = { hardwareReport = null },
+            title = { Text("DEVICE CAMERA CAPABILITIES") },
+            text = {
+                Text(
+                    hardwareReport ?: "",
+                    fontSize = 11.sp,
+                    modifier = Modifier.heightIn(max = 420.dp)
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = { hardwareReport = null }) {
+                    Text("CLOSE")
+                }
+            },
+            containerColor = Color(0xFF1C1C1E),
+            titleContentColor = Color.White,
+            textContentColor = Color.LightGray
+        )
+    }
+
     if (photoScore != null) {
         ModalBottomSheet(onDismissRequest = { photoScore = null }, containerColor = Color(0xFF1C1C1E)) {
             Column(modifier = Modifier.fillMaxWidth().padding(24.dp)) {
