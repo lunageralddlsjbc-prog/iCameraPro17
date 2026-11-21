@@ -379,21 +379,22 @@ fun CameraScreen() {
                         layoutParams = ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
                         implementationMode = androidx.camera.view.PreviewView.ImplementationMode.COMPATIBLE
                         scaleType = androidx.camera.view.PreviewView.ScaleType.FILL_CENTER
+                        val preview = this
                         val focusGestureDetector = android.view.GestureDetector(
                             ctx,
                             object : android.view.GestureDetector.SimpleOnGestureListener() {
                                 private fun focusAt(event: android.view.MotionEvent, lock: Boolean) {
-                                    if (v.width <= 0 || v.height <= 0) return
+                                    if (preview.width <= 0 || preview.height <= 0) return
                                     val pointFactory = SurfaceOrientedMeteringPointFactory(1f, 1f)
                                     val point = pointFactory.createPoint(
-                                        (event.x / v.width).coerceIn(0f, 1f),
-                                        (event.y / v.height).coerceIn(0f, 1f)
+                                        (event.x / preview.width).coerceIn(0f, 1f),
+                                        (event.y / preview.height).coerceIn(0f, 1f)
                                     )
                                     val actionBuilder = FocusMeteringAction.Builder(point)
                                     if (lock) actionBuilder.disableAutoCancel()
                                     camera?.cameraControl?.startFocusAndMetering(actionBuilder.build())
                                     aeAfLocked = lock
-                                    v.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                                    preview.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
                                 }
 
                                 override fun onDown(event: android.view.MotionEvent): Boolean = true
