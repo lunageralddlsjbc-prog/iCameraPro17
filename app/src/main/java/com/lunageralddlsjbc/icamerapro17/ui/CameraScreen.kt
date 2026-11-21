@@ -212,6 +212,10 @@ fun CameraScreen() {
         mutableStateOf(cameraSettings.getBoolean("cinematic_mode", false))
     }
 
+    var portraitModeEnabled by remember {
+        mutableStateOf(cameraSettings.getBoolean("portrait_mode", false))
+    }
+
     var selectedAspectRatio by remember { mutableStateOf(CameraAspectRatio.RATIO_4_3) }
     var selectedZoomRatio by remember { mutableStateOf(1f) }
     var showZoomRuler by remember { mutableStateOf(false) }
@@ -516,6 +520,25 @@ fun CameraScreen() {
                 Card(
                     shape = RoundedCornerShape(20.dp),
                     colors = CardDefaults.cardColors(
+                        containerColor = if (portraitModeEnabled) Color(0xFF174D3A) else Color.Black.copy(alpha = 0.6f)
+                    ),
+                    modifier = Modifier.clickable {
+                        portraitModeEnabled = !portraitModeEnabled
+                        cameraSettings.edit().putBoolean("portrait_mode", portraitModeEnabled).apply()
+                    }
+                ) {
+                    Text(
+                        text = if (portraitModeEnabled) "PORTRAIT ON" else "PORTRAIT",
+                        color = if (portraitModeEnabled) Color(0xFF00D889) else Color.White,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 7.dp)
+                    )
+                }
+
+                Card(
+                    shape = RoundedCornerShape(20.dp),
+                    colors = CardDefaults.cardColors(
                         containerColor = if (extendedExposureEnabled) Color(0xFF174D3A) else Color.Black.copy(alpha = 0.6f)
                     ),
                     modifier = Modifier.clickable {
@@ -649,7 +672,7 @@ fun CameraScreen() {
                             } else if (!isRecording) {
                                 showCaptureFlash = true
                                 GlobalScope.launch(Dispatchers.Main) { delay(150); showCaptureFlash = false }
-                                takePhoto(imageCapture, cameraExecutor, context, selectedAspectRatio, autoEnhanceEnabled, keepOriginalBackup) { uri ->
+                                takePhoto(imageCapture, cameraExecutor, context, selectedAspectRatio, autoEnhanceEnabled, keepOriginalBackup, portraitModeEnabled) { uri ->
                                     lastMediaUri = uri
                                     GlobalScope.launch(Dispatchers.IO) {
                                         try {
@@ -723,6 +746,7 @@ private fun takePhoto(
     aspectRatio: CameraAspectRatio,
     autoEnhance: Boolean,
     keepOriginalBackup: Boolean,
+    portraitMode: Boolean,
     onSaved: (Uri) -> Unit
 ) {
     if (imageCapture == null) return
@@ -764,6 +788,17 @@ private fun takePhoto(
                             }
                         } else {
                             Log.w("Camera", "Enhancement skipped to protect available memory")
+                        }
+                    }
+
+                    // Portrait processing only modifies the separate Enhanced copy.
+                    if (portraitMode) {
+                        if (com.lunageralddlsjbc.icamerapro17.camera.PhotoStorageManager
+                                .canEnhanceSafely(context, copies.enhancedUri)) {
+                            com.lunageralddlsjbc.icamerapro17.ai.PortraitPhotoProcessor
+                                .apply(context, copies.enhancedUri)
+                        } else {
+                            Log.w("Portrait", "Portrait effect skipped to protect available memory")
                         }
                     }
 
