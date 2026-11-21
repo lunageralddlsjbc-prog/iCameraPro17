@@ -3,7 +3,6 @@ package com.lunageralddlsjbc.icamerapro17.ui
 import android.Manifest
 import android.content.ContentValues
 import android.content.Context
-import android.content.pm.PackageManager
 import android.graphics.BitmapFactory
 import android.net.Uri
 import android.os.Build
@@ -12,7 +11,6 @@ import android.provider.MediaStore
 import android.util.Log
 import android.view.HapticFeedbackConstants
 import android.view.ViewGroup
-import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.camera.core.*
@@ -48,7 +46,6 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import com.lunageralddlsjbc.icamerapro17.ai.ImageQualityScorer
 import com.lunageralddlsjbc.icamerapro17.ai.PhotoScore
-import java.io.File
 import java.text.SimpleDateFormat
 import java.util.*
 import java.util.concurrent.ExecutorService
@@ -70,9 +67,7 @@ fun CameraScreen() {
         permissionsGranted = perms.values.all { it }
     }
     
-    LaunchedEffect(Unit) {
-        launcher.launch(arrayOf(Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO))
-    }
+    LaunchedEffect(Unit) { launcher.launch(arrayOf(Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO)) }
     
     var isFrontCamera by remember { mutableStateOf(false) }
     var flashOn by remember { mutableStateOf(false) }
@@ -83,13 +78,13 @@ fun CameraScreen() {
     var gridEnabled by remember { mutableStateOf(false) }
     
     var previewViewRef by remember { mutableStateOf<androidx.camera.view.PreviewView?>(null) }
+    var camera by remember { mutableStateOf<Camera?>(null) } // CRITICAL: Save Camera instance
     var imageCapture by remember { mutableStateOf<ImageCapture?>(null) }
     var videoCapture by remember { mutableStateOf<VideoCapture<Recorder>?>(null) }
     var activeRecording by remember { mutableStateOf<Recording?>(null) }
     var isRecording by remember { mutableStateOf(false) }
     val cameraExecutor = remember { Executors.newSingleThreadExecutor() }
     
-    // ONLY bind camera if permissions are granted
     LaunchedEffect(isFrontCamera, permissionsGranted) {
         if (!permissionsGranted) return@LaunchedEffect
         val cameraProviderFuture = ProcessCameraProvider.getInstance(context)
@@ -104,7 +99,9 @@ fun CameraScreen() {
                 val recorder = Recorder.Builder().setQualitySelector(QualitySelector.from(Quality.HIGHEST)).build()
                 val newVideoCapture = VideoCapture.Builder(recorder).build()
                 
-                cameraProvider.bindToLifecycle(lifecycleOwner, cameraSelector, preview, newImageCapture, newVideoCapture)
+                // SAVE THE CAMERA INSTANCE HERE
+                val cam = cameraProvider.bindToLifecycle(lifecycleOwner, cameraSelector, preview, newImageCapture, newVideoCapture)
+                camera = cam
                 imageCapture = newImageCapture
                 videoCapture = newVideoCapture
             } catch (e: Exception) { 
@@ -132,9 +129,10 @@ fun CameraScreen() {
                             if (event.action == android.view.MotionEvent.ACTION_DOWN) {
                                 v.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
                                 val factory = androidx.camera.core.SurfaceOrientedMeteringPointFactory(1f, 1f)
-                                imageCapture?.let { ic ->
-                                    ic.cameraControl.startFocusAndMetering(FocusMeteringAction.Builder(factory.createPoint(event.x / v.width, event.y / v.height)).build())
-                                }
+                                // USE THE SAVED CAMERA INSTANCE FOR FOCUS
+                                camera?.cameraControl?.startFocusAndMetering(
+                                    FocusMeteringAction.Builder(factory.createPoint(event.x / v.width, event.y / v.height)).build()
+                                )
                             }
                             true
                         }
@@ -162,7 +160,6 @@ fun CameraScreen() {
             }
             
             Box(modifier = Modifier.fillMaxWidth().background(brush = Brush.verticalGradient(colors = listOf(Color.Transparent, Color.Black.copy(alpha = 0.9f)))).padding(bottom = 30.dp)) {
-                // Gallery Thumbnail
                 Card(
                     modifier = Modifier.align(Alignment.BottomStart).padding(start = 24.dp, bottom = 90.dp).size(60.dp).clip(RoundedCornerShape(8.dp)).clickable {
                         lastMediaUri?.let { uri ->
@@ -192,7 +189,6 @@ fun CameraScreen() {
                                 GlobalScope.launch(Dispatchers.Main) { delay(150); showCaptureFlash = false }
                                 takePhoto(imageCapture, cameraExecutor, context) { uri -> 
                                     lastMediaUri = uri
-                                    // Trigger AI Scorer
                                     GlobalScope.launch(Dispatchers.IO) {
                                         try {
                                             val bitmap = context.contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it) }
@@ -217,7 +213,6 @@ fun CameraScreen() {
         }
     }
     
-    // AI Scorecard Modal
     if (photoScore != null) {
         ModalBottomSheet(onDismissRequest = { photoScore = null }, containerColor = Color(0xFF1C1C1E)) {
             Column(modifier = Modifier.fillMaxWidth().padding(24.dp)) {
