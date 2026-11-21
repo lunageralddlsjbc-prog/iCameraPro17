@@ -5,12 +5,12 @@ plugins {
 
 android {
     namespace = "com.lunageralddlsjbc.icamerapro17"
-    compileSdk = 35
+    compileSdk = 34
 
     defaultConfig {
         applicationId = "com.lunageralddlsjbc.icamerapro17"
         minSdk = 26
-        targetSdk = 35
+        targetSdk = 34
         versionCode = 1
         versionName = "1.0"
     }
@@ -33,29 +33,26 @@ android {
 dependencies {
     val composeBom = platform("androidx.compose:compose-bom:20240401")
     implementation(composeBom)
-    
-    implementation("androidx.core:core-ktx:1.13.1")
-    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.0")
-    implementation("androidx.activity:activity-compose:1.9.0")
+    implementation("androidx.core:core-ktx:1.12.0")
+    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.7.0")
+    implementation("androidx.activity:activity-compose:1.8.2")
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.ui:ui-graphics")
     implementation("androidx.compose.material3:material3")
     
     // CameraX
-    val cameraxVersion = "1.4.0-beta02"
+    val cameraxVersion = "1.3.1"
     implementation("androidx.camera:camera-core:$cameraxVersion")
     implementation("androidx.camera:camera-camera2:$cameraxVersion")
     implementation("androidx.camera:camera-lifecycle:$cameraxVersion")
     implementation("androidx.camera:camera-video:$cameraxVersion")
     implementation("androidx.camera:camera-view:$cameraxVersion")
     
-    // Coroutines & Play Services (CRITICAL for ML Kit .await())
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.8.1")
-    
-    // ML Kit & DataStore
-    implementation("com.google.mlkit:face-detection:16.1.7")
-    implementation("androidx.datastore:datastore-preferences:1.1.1")
+    // Coroutines & ML Kit
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.7.3")
+    implementation("com.google.mlkit:face-detection:16.1.5")
+    implementation("androidx.datastore:datastore-preferences:1.0.0")
     
     debugImplementation("androidx.compose.ui:ui-tooling")
 }
