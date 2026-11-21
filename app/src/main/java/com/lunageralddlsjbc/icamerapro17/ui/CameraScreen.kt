@@ -118,7 +118,8 @@ fun CameraScreen() {
     var photoScore by remember { mutableStateOf<PhotoScore?>(null) }
     var gridEnabled by remember { mutableStateOf(false) }
     var selectedAspectRatio by remember { mutableStateOf(CameraAspectRatio.RATIO_4_3) }
-    
+    var selectedZoomRatio by remember { mutableStateOf(1f) }
+
     var previewViewRef by remember { mutableStateOf<androidx.camera.view.PreviewView?>(null) }
     var camera by remember { mutableStateOf<Camera?>(null) } // CRITICAL: Save Camera instance
     var imageCapture by remember { mutableStateOf<ImageCapture?>(null) }
@@ -155,6 +156,7 @@ fun CameraScreen() {
                     .setTargetRotation(rotation)
                     .build()
 
+                // Keep the captured image crop synchronized with the selected ratio.
                 val viewPort = ViewPort.Builder(
                     Rational(selectedAspectRatio.width, selectedAspectRatio.height),
                     rotation
@@ -175,6 +177,17 @@ fun CameraScreen() {
                     useCaseGroup
                 )
                 camera = cam
+
+                // Restore the selected zoom when the camera is rebound.
+                val zoomState = cam.cameraInfo.zoomState.value
+                if (zoomState != null) {
+                    selectedZoomRatio = selectedZoomRatio.coerceIn(
+                        zoomState.minZoomRatio,
+                        zoomState.maxZoomRatio
+                    )
+                    cam.cameraControl.setZoomRatio(selectedZoomRatio)
+                }
+
                 imageCapture = newImageCapture
                 videoCapture = newVideoCapture
             } catch (e: Exception) { 
@@ -186,7 +199,13 @@ fun CameraScreen() {
     LaunchedEffect(flashOn) { imageCapture?.flashMode = if (flashOn) ImageCapture.FLASH_MODE_ON else ImageCapture.FLASH_MODE_OFF }
     val shutterScale by animateFloatAsState(targetValue = if (isShutterPressed) 0.8f else 1f, animationSpec = spring(dampingRatio = 0.6f, stiffness = 300f), label = "shutter")
     
-    Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
+    BoxWithConstraints(modifier = Modifier.fillMaxSize().background(Color.Black)) {
+        // Portrait preview dimensions for the selected photo ratio.
+        val previewAspectRatio = selectedAspectRatio.width.toFloat() /
+            selectedAspectRatio.height.toFloat()
+        val previewWidth = minOf(maxWidth, maxHeight * previewAspectRatio)
+        val previewHeight = previewWidth / previewAspectRatio
+
         if (!permissionsGranted) {
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Text("Please grant Camera permissions", color = Color.White)
@@ -211,12 +230,20 @@ fun CameraScreen() {
                         }
                     }.also { previewViewRef = it }
                 },
-                modifier = Modifier.fillMaxSize()
+                modifier = Modifier
+                    .width(previewWidth)
+                    .height(previewHeight)
+                    .align(Alignment.Center)
             )
         }
-        
+
         if (gridEnabled) {
-            Canvas(modifier = Modifier.fillMaxSize()) {
+            Canvas(
+                modifier = Modifier
+                    .width(previewWidth)
+                    .height(previewHeight)
+                    .align(Alignment.Center)
+            ) {
                 val w = size.width; val h = size.height; val c = Color.White.copy(alpha = 0.5f)
                 drawLine(c, Offset(w / 3f, 0f), Offset(w / 3f, h), 2f); drawLine(c, Offset(2f * w / 3f, 0f), Offset(2f * w / 3f, h), 2f)
                 drawLine(c, Offset(0f, h / 3f), Offset(w, h / 3f), 2f); drawLine(c, Offset(0f, 2f * h / 3f), Offset(w, 2f * h / 3f), 2f)
@@ -249,7 +276,55 @@ fun CameraScreen() {
                     Text(text = if (flashOn) "⚡" else "○", color = if (flashOn) Color(0xFFFFD700) else Color.White, fontSize = 24.sp)
                 }
             }
-            
+
+            // Zoom presets: unavailable hardware zoom levels are disabled.
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 12.dp),
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                val zoomState = camera?.cameraInfo?.zoomState?.value
+
+                listOf(0.5f, 1f, 2f, 5f).forEach { zoom ->
+                    val supported = zoomState != null &&
+                        zoom >= zoomState.minZoomRatio &&
+                        zoom <= zoomState.maxZoomRatio
+
+                    val selected = kotlin.math.abs(selectedZoomRatio - zoom) < 0.01f
+
+                    Card(
+                        shape = RoundedCornerShape(20.dp),
+                        colors = CardDefaults.cardColors(
+                            containerColor = if (selected) Color(0xFFFFD700)
+                            else Color.Black.copy(alpha = 0.7f)
+                        ),
+                        modifier = Modifier
+                            .padding(horizontal = 5.dp)
+                            .clickable(enabled = supported) {
+                                camera?.cameraControl?.setZoomRatio(zoom)
+                                selectedZoomRatio = zoom
+                            }
+                    ) {
+                        Text(
+                            text = "${zoom}x",
+                            color = when {
+                                !supported -> Color.Gray
+                                selected -> Color.Black
+                                else -> Color.White
+                            },
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(
+                                horizontal = 14.dp,
+                                vertical = 9.dp
+                            )
+                        )
+                    }
+                }
+            }
+
             Box(modifier = Modifier.fillMaxWidth().background(brush = Brush.verticalGradient(colors = listOf(Color.Transparent, Color.Black.copy(alpha = 0.9f)))).padding(bottom = 30.dp)) {
                 Card(
                     modifier = Modifier.align(Alignment.BottomStart).padding(start = 24.dp, bottom = 90.dp).size(60.dp).clip(RoundedCornerShape(8.dp)).clickable {
