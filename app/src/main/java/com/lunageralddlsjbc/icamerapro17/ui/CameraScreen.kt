@@ -247,6 +247,10 @@ fun CameraScreen() {
         mutableStateOf(cameraSettings.getBoolean("portrait_mode", false))
     }
 
+    var hdrModeEnabled by remember {
+        mutableStateOf(cameraSettings.getBoolean("hdr_mode", false))
+    }
+
     var selectedAspectRatio by remember { mutableStateOf(CameraAspectRatio.RATIO_4_3) }
     var selectedZoomRatio by remember { mutableStateOf(1f) }
     var showZoomRuler by remember { mutableStateOf(false) }
@@ -697,7 +701,7 @@ fun CameraScreen() {
                             } else if (!isRecording) {
                                 showCaptureFlash = true
                                 GlobalScope.launch(Dispatchers.Main) { delay(150); showCaptureFlash = false }
-                                takePhoto(imageCapture, cameraExecutor, context, selectedAspectRatio, autoEnhanceEnabled, keepOriginalBackup, portraitModeEnabled) { uri ->
+                                takePhoto(imageCapture, camera, hdrModeEnabled, cameraExecutor, context, selectedAspectRatio, autoEnhanceEnabled, keepOriginalBackup, portraitModeEnabled) { uri ->
                                     lastMediaUri = uri
                                     GlobalScope.launch(Dispatchers.IO) {
                                         try {
@@ -765,6 +769,28 @@ fun CameraScreen() {
                         extendedExposureEnabled = !extendedExposureEnabled
                         cameraSettings.edit().putBoolean("extended_exposure", extendedExposureEnabled).apply()
                     }
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    QuickMenuTile(
+                        "HDR",
+                        if (hdrModeEnabled) "ON" else "OFF",
+                        hdrModeEnabled,
+                        Modifier.weight(1f)
+                    ) {
+                        hdrModeEnabled = !hdrModeEnabled
+                        cameraSettings.edit().putBoolean("hdr_mode", hdrModeEnabled).apply()
+                    }
+                    Text(
+                        "OFF: regular photo  •  ON: multi-exposure merge",
+                        color = Color.LightGray,
+                        fontSize = 11.sp,
+                        modifier = Modifier.weight(2f)
+                    )
                 }
 
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -839,6 +865,8 @@ fun CameraScreen() {
 
 private fun takePhoto(
     imageCapture: ImageCapture?,
+    activeCamera: Camera?,
+    hdrEnabled: Boolean,
     executor: ExecutorService,
     context: Context,
     aspectRatio: CameraAspectRatio,
@@ -866,41 +894,67 @@ private fun takePhoto(
 
     imageCapture.takePicture(outputOptions, executor, object : ImageCapture.OnImageSavedCallback {
         override fun onImageSaved(output: ImageCapture.OutputFileResults) {
-            output.savedUri?.let { uri ->
-                var displayUri = uri
-                try {
-                    // Always preserve an untouched original, independently of the optional backup setting.
-                    val copies = com.lunageralddlsjbc.icamerapro17.camera.PhotoStorageManager
-                        .createCopies(context, uri, keepOriginalBackup)
+            val originalUri = output.savedUri ?: return
 
+            GlobalScope.launch(Dispatchers.IO) {
+                var displayUri = originalUri
+                try {
+                    // Preserve the untouched normal shutter capture as the original.
+                    val copies = com.lunageralddlsjbc.icamerapro17.camera.PhotoStorageManager
+                        .createCopies(context, originalUri, keepOriginalBackup)
                     displayUri = copies.enhancedUri
 
-                    // Process only the separate Enhanced copy. The Original is never modified.
+                    // HDR is optional. A failed bracket/merge leaves the regular enhanced copy intact.
+                    if (hdrEnabled && activeCamera != null) {
+                        var mergedFile: java.io.File? = null
+                        try {
+                            val mergedOutput = com.lunageralddlsjbc.icamerapro17.camera.HdrCapturePipeline
+                                .captureMergedFile(context, activeCamera, imageCapture, executor)
+                            mergedFile = mergedOutput
+
+                            val outputStream = context.contentResolver.openOutputStream(copies.enhancedUri, "wt")
+                                ?: throw IllegalStateException("Could not open enhanced photo for HDR output")
+                            outputStream.use { destination ->
+                                mergedOutput.inputStream().use { source -> source.copyTo(destination) }
+                            }
+                            Log.i("CameraHDR", "HDR exposure fusion saved to enhanced photo")
+                        } catch (hdrError: Exception) {
+                            Log.e("CameraHDR", "HDR merge failed; keeping regular photo", hdrError)
+                        } finally {
+                            mergedFile?.delete()
+                        }
+                    } else if (hdrEnabled) {
+                        Log.w("CameraHDR", "Camera unavailable; saved regular photo instead")
+                    }
+
+                    // All optional processing is applied only to the Enhanced copy.
                     if (autoEnhance) {
                         if (com.lunageralddlsjbc.icamerapro17.camera.PhotoStorageManager
                                 .canEnhanceSafely(context, copies.enhancedUri)) {
                             try {
                                 AutoPhotoEnhancer.enhance(context, copies.enhancedUri)
                             } catch (e: Exception) {
-                                Log.e("Camera", "Enhancement failed; retaining unmodified enhanced copy", e)
+                                Log.e("Camera", "Enhancement failed; retaining current enhanced copy", e)
                             }
                         } else {
                             Log.w("Camera", "Enhancement skipped to protect available memory")
                         }
                     }
 
-                    // Portrait processing only modifies the separate Enhanced copy.
                     if (portraitMode) {
                         if (com.lunageralddlsjbc.icamerapro17.camera.PhotoStorageManager
                                 .canEnhanceSafely(context, copies.enhancedUri)) {
-                            com.lunageralddlsjbc.icamerapro17.ai.PortraitPhotoProcessor
-                                .apply(context, copies.enhancedUri)
+                            try {
+                                com.lunageralddlsjbc.icamerapro17.ai.PortraitPhotoProcessor
+                                    .apply(context, copies.enhancedUri)
+                            } catch (e: Exception) {
+                                Log.e("Portrait", "Portrait processing failed", e)
+                            }
                         } else {
                             Log.w("Portrait", "Portrait effect skipped to protect available memory")
                         }
                     }
 
-                    // Restore available camera metadata after the JPEG has been rewritten.
                     try {
                         com.lunageralddlsjbc.icamerapro17.camera.PhotoStorageManager
                             .restoreExifMetadata(context, copies.originalUri, copies.enhancedUri)
@@ -908,12 +962,11 @@ private fun takePhoto(
                         Log.e("Camera", "Could not restore all EXIF metadata", e)
                     }
                 } catch (e: Exception) {
-                    // The original CameraX capture remains untouched if copy creation fails.
-                    Log.e("Camera", "Phase 2A storage failed; showing original capture", e)
-                    displayUri = uri
+                    Log.e("Camera", "Photo copy/processing failed; showing original capture", e)
+                    displayUri = originalUri
                 }
 
-                ContextCompat.getMainExecutor(context).execute {
+                withContext(Dispatchers.Main) {
                     onSaved(displayUri)
                 }
             }
