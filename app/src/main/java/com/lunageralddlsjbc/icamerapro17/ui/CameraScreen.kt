@@ -208,6 +208,10 @@ fun CameraScreen() {
         mutableStateOf(cameraSettings.getBoolean("extended_exposure", false))
     }
 
+    var cinematicModeEnabled by remember {
+        mutableStateOf(cameraSettings.getBoolean("cinematic_mode", false))
+    }
+
     var selectedAspectRatio by remember { mutableStateOf(CameraAspectRatio.RATIO_4_3) }
     var selectedZoomRatio by remember { mutableStateOf(1f) }
     var showZoomRuler by remember { mutableStateOf(false) }
@@ -228,7 +232,7 @@ fun CameraScreen() {
     var isRecording by remember { mutableStateOf(false) }
     val cameraExecutor = remember { Executors.newSingleThreadExecutor() }
     
-    LaunchedEffect(isFrontCamera, permissionsGranted, selectedAspectRatio, previewViewRef) {
+    LaunchedEffect(isFrontCamera, permissionsGranted, selectedAspectRatio, previewViewRef, cinematicModeEnabled) {
         if (!permissionsGranted) return@LaunchedEffect
         val cameraProviderFuture = ProcessCameraProvider.getInstance(context)
         cameraProviderFuture.addListener({
@@ -249,8 +253,19 @@ fun CameraScreen() {
                     .setFlashMode(if (flashOn) ImageCapture.FLASH_MODE_ON else ImageCapture.FLASH_MODE_OFF)
                     .build()
 
+                // Prefer true UHD 2160p for Cinematic Mode.
+                // CameraX selects a lower supported quality if UHD is unavailable.
+                val videoQualitySelector = if (cinematicModeEnabled) {
+                    QualitySelector.fromOrderedList(
+                        listOf(Quality.UHD, Quality.FHD, Quality.HD, Quality.SD),
+                        FallbackStrategy.lowerQualityOrHigherThan(Quality.SD)
+                    )
+                } else {
+                    QualitySelector.from(Quality.HIGHEST)
+                }
+
                 val recorder = Recorder.Builder()
-                    .setQualitySelector(QualitySelector.from(Quality.HIGHEST))
+                    .setQualitySelector(videoQualitySelector)
                     .build()
                 val newVideoCapture = VideoCapture.Builder(recorder)
                     .setTargetRotation(rotation)
@@ -480,6 +495,27 @@ fun CameraScreen() {
                 Card(
                     shape = RoundedCornerShape(20.dp),
                     colors = CardDefaults.cardColors(
+                        containerColor = if (cinematicModeEnabled) Color(0xFF174D3A) else Color.Black.copy(alpha = 0.6f)
+                    ),
+                    modifier = Modifier.clickable(enabled = !isRecording) {
+                        cinematicModeEnabled = !cinematicModeEnabled
+                        cameraSettings.edit()
+                            .putBoolean("cinematic_mode", cinematicModeEnabled)
+                            .apply()
+                    }
+                ) {
+                    Text(
+                        text = if (cinematicModeEnabled) "CINEMA UHD*" else "CINEMA",
+                        color = if (cinematicModeEnabled) Color(0xFF00D889) else Color.White,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 7.dp)
+                    )
+                }
+
+                Card(
+                    shape = RoundedCornerShape(20.dp),
+                    colors = CardDefaults.cardColors(
                         containerColor = if (extendedExposureEnabled) Color(0xFF174D3A) else Color.Black.copy(alpha = 0.6f)
                     ),
                     modifier = Modifier.clickable {
@@ -546,10 +582,74 @@ fun CameraScreen() {
                         modifier = Modifier.size(76.dp).scale(shutterScale).border(4.dp, Color.White.copy(alpha = 0.55f), CircleShape).padding(4.dp).background(shutterColor, CircleShape).clickable { 
                             isShutterPressed = true
                             GlobalScope.launch(Dispatchers.Main) { delay(100); isShutterPressed = false }
-                            if (!isRecording) {
+                            if (cinematicModeEnabled) {
+                                if (!isRecording) {
+                                    val capture = videoCapture
+                                    if (capture == null) {
+                                        Log.e("Camera", "Video capture is not ready")
+                                    } else {
+                                        try {
+                                            val values = ContentValues().apply {
+                                                put(
+                                                    MediaStore.Video.Media.DISPLAY_NAME,
+                                                    "CINEMA_${SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())}.mp4"
+                                                )
+                                                put(MediaStore.Video.Media.MIME_TYPE, "video/mp4")
+                                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                                                    put(
+                                                        MediaStore.Video.Media.RELATIVE_PATH,
+                                                        Environment.DIRECTORY_MOVIES + "/iCamera Pro 17"
+                                                    )
+                                                }
+                                            }
+                                            val outputOptions = MediaStoreOutputOptions.Builder(
+                                                context.contentResolver,
+                                                MediaStore.Video.Media.EXTERNAL_CONTENT_URI
+                                            ).setContentValues(values).build()
+
+                                            var pending = capture.output.prepareRecording(context, outputOptions)
+                                            if (ContextCompat.checkSelfPermission(
+                                                    context,
+                                                    Manifest.permission.RECORD_AUDIO
+                                                ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+                                            ) {
+                                                pending = pending.withAudioEnabled()
+                                            }
+
+                                            val mainExecutor = ContextCompat.getMainExecutor(context)
+                                            val recording = pending.start(cameraExecutor) { event ->
+                                                when (event) {
+                                                    is VideoRecordEvent.Start -> mainExecutor.execute {
+                                                        isRecording = true
+                                                    }
+                                                    is VideoRecordEvent.Finalize -> mainExecutor.execute {
+                                                        isRecording = false
+                                                        activeRecording = null
+                                                        if (event.hasError()) {
+                                                            Log.e("Camera", "Video recording failed: ${event.error}")
+                                                        } else {
+                                                            val savedUri = event.outputResults.outputUri
+                                                            if (savedUri != Uri.EMPTY) lastMediaUri = savedUri
+                                                            Log.i("Camera", "Cinematic video saved: $savedUri")
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                            activeRecording = recording
+                                            isRecording = true
+                                        } catch (e: Exception) {
+                                            Log.e("Camera", "Could not start cinematic recording", e)
+                                            isRecording = false
+                                            activeRecording = null
+                                        }
+                                    }
+                                } else {
+                                    activeRecording?.stop()
+                                }
+                            } else if (!isRecording) {
                                 showCaptureFlash = true
                                 GlobalScope.launch(Dispatchers.Main) { delay(150); showCaptureFlash = false }
-                                takePhoto(imageCapture, cameraExecutor, context, selectedAspectRatio, autoEnhanceEnabled, keepOriginalBackup) { uri -> 
+                                takePhoto(imageCapture, cameraExecutor, context, selectedAspectRatio, autoEnhanceEnabled, keepOriginalBackup) { uri ->
                                     lastMediaUri = uri
                                     GlobalScope.launch(Dispatchers.IO) {
                                         try {
@@ -561,10 +661,6 @@ fun CameraScreen() {
                                         } catch (e: Exception) { Log.e("AI", "Score failed: ${e.message}") }
                                     }
                                 }
-                            } else {
-                                activeRecording?.stop()
-                                activeRecording = null
-                                isRecording = false
                             }
                         },
                         contentAlignment = Alignment.Center
