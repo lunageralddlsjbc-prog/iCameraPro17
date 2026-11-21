@@ -49,7 +49,7 @@ object CameraHardwareInspector {
                 }
 
                 c.get(CameraCharacteristics.SENSOR_INFO_ACTIVE_ARRAY_SIZE)?.let {
-                    report.appendLine("Active sensor area: ${it.width} x ${it.height}")
+                    report.appendLine("Active sensor area: ${it.width()} x ${it.height()}")
                 }
 
                 c.get(CameraCharacteristics.LENS_INFO_AVAILABLE_FOCAL_LENGTHS)?.let {
