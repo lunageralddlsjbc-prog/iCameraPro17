@@ -220,6 +220,9 @@ fun CameraScreen() {
     var gridEnabled by remember { mutableStateOf(false) }
     var hardwareReport by remember { mutableStateOf<String?>(null) }
     var aeAfLocked by remember { mutableStateOf(false) }
+    var focusPoint by remember { mutableStateOf<Offset?>(null) }
+    var showExposureSlider by remember { mutableStateOf(false) }
+    var exposureAdjustmentEv by remember { mutableStateOf(0f) }
     var quickMenuExpanded by remember { mutableStateOf(false) }
 
     val cameraSettings = remember {
@@ -348,34 +351,36 @@ fun CameraScreen() {
     
     LaunchedEffect(flashOn) { imageCapture?.flashMode = if (flashOn) ImageCapture.FLASH_MODE_ON else ImageCapture.FLASH_MODE_OFF }
 
-    // ISO 50-style extended exposure: approximately -1 EV using the
-    // camera's advertised compensation step and supported index range.
-    // This does not change the sensor's native ISO floor.
-    LaunchedEffect(camera, extendedExposureEnabled) {
+    // Combine Extended Exposure with the user's live brightness adjustment.
+    // The final value is clamped to the camera's advertised compensation range.
+    LaunchedEffect(camera, extendedExposureEnabled, exposureAdjustmentEv) {
         val activeCamera = camera ?: return@LaunchedEffect
         try {
             val exposureState = activeCamera.cameraInfo.exposureState
             val range = exposureState.exposureCompensationRange
             val step = exposureState.exposureCompensationStep.toDouble()
+            if (step > 0.0) {
+                val baseEv = if (extendedExposureEnabled) -1.0 else 0.0
+                val requestedIndex = ((baseEv + exposureAdjustmentEv.toDouble()) / step)
+                    .roundToInt()
+                    .coerceIn(range.lower, range.upper)
 
-            val requestedIndex = if (extendedExposureEnabled && step > 0.0) {
-                (-1.0 / step).roundToInt().coerceIn(range.lower, range.upper)
-            } else {
-                0.coerceIn(range.lower, range.upper)
+                activeCamera.cameraControl.setExposureCompensationIndex(requestedIndex)
+                    .addListener(
+                        { Log.d("Camera", "Exposure compensation applied: $requestedIndex") },
+                        ContextCompat.getMainExecutor(context)
+                    )
             }
-
-            activeCamera.cameraControl.setExposureCompensationIndex(requestedIndex)
-                .addListener(
-                    {
-                        Log.d("Camera", "Extended exposure index applied: $requestedIndex")
-                    },
-                    ContextCompat.getMainExecutor(context)
-                )
         } catch (e: Exception) {
-            Log.e("Camera", "Could not apply extended exposure mode", e)
+            Log.e("Camera", "Could not apply exposure adjustment", e)
         }
     }
     val shutterScale by animateFloatAsState(targetValue = if (isShutterPressed) 0.8f else 1f, animationSpec = spring(dampingRatio = 0.6f, stiffness = 300f), label = "shutter")
+    val focusBoxScale by animateFloatAsState(
+        targetValue = if (focusPoint != null) 1f else 0.75f,
+        animationSpec = spring(dampingRatio = 0.62f, stiffness = 420f),
+        label = "focusBox"
+    )
     
     BoxWithConstraints(modifier = Modifier.fillMaxSize().background(Color.Black)) {
         // Match the visible preview frame to the phone's current orientation.
@@ -413,10 +418,11 @@ fun CameraScreen() {
                                 private fun focusAt(event: android.view.MotionEvent, lock: Boolean) {
                                     if (preview.width <= 0 || preview.height <= 0) return
                                     val pointFactory = SurfaceOrientedMeteringPointFactory(1f, 1f)
-                                    val point = pointFactory.createPoint(
-                                        (event.x / preview.width).coerceIn(0f, 1f),
-                                        (event.y / preview.height).coerceIn(0f, 1f)
-                                    )
+                                    val normalizedX = (event.x / preview.width).coerceIn(0f, 1f)
+                                    val normalizedY = (event.y / preview.height).coerceIn(0f, 1f)
+                                    val point = pointFactory.createPoint(normalizedX, normalizedY)
+                                    focusPoint = Offset(normalizedX, normalizedY)
+                                    showExposureSlider = true
                                     val actionBuilder = FocusMeteringAction.Builder(point)
                                     if (lock) actionBuilder.disableAutoCancel()
                                     camera?.cameraControl?.startFocusAndMetering(actionBuilder.build())
@@ -486,6 +492,70 @@ fun CameraScreen() {
                     }
                     .padding(8.dp)
             )
+
+            if (focusPoint != null) {
+                val point = focusPoint!!
+                Box(
+                    modifier = Modifier
+                        .offset(
+                            x = previewWidth * point.x - 32.dp,
+                            y = previewHeight * point.y - 32.dp
+                        )
+                        .size(64.dp)
+                        .scale(focusBoxScale)
+                        .border(1.5.dp, Color(0xFFFFD60A), RoundedCornerShape(2.dp))
+                )
+
+                if (showExposureSlider) {
+                    Column(
+                        modifier = Modifier
+                            .offset(
+                                x = (previewWidth * point.x + 42.dp).coerceAtMost(previewWidth - 48.dp),
+                                y = (previewHeight * point.y - 76.dp).coerceAtLeast(8.dp)
+                            )
+                            .width(40.dp)
+                            .height(152.dp)
+                            .background(Color.Black.copy(alpha = 0.58f), RoundedCornerShape(20.dp))
+                            .pointerInput(exposureAdjustmentEv) {
+                                detectDragGestures { change, dragAmount ->
+                                    change.consume()
+                                    exposureAdjustmentEv =
+                                        (exposureAdjustmentEv - dragAmount.y / 90f)
+                                            .coerceIn(-2f, 2f)
+                                }
+                            }
+                            .padding(vertical = 8.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text("☀", color = Color(0xFFFFD60A), fontSize = 16.sp)
+                        Canvas(modifier = Modifier.width(22.dp).weight(1f)) {
+                            val centerX = size.width / 2f
+                            val top = 4.dp.toPx()
+                            val bottom = size.height - 4.dp.toPx()
+                            drawLine(
+                                Color.White.copy(alpha = 0.8f),
+                                Offset(centerX, top),
+                                Offset(centerX, bottom),
+                                strokeWidth = 2.dp.toPx()
+                            )
+                            val fraction = ((exposureAdjustmentEv + 2f) / 4f).coerceIn(0f, 1f)
+                            val markerY = bottom - fraction * (bottom - top)
+                            drawCircle(
+                                Color(0xFFFFD60A),
+                                radius = 6.dp.toPx(),
+                                center = Offset(centerX, markerY)
+                            )
+                        }
+                        Text(
+                            text = String.format(Locale.US, "%+.1f", exposureAdjustmentEv),
+                            color = Color.White,
+                            fontSize = 9.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+            }
 
             if (aeAfLocked) {
                 Text(
