@@ -25,6 +25,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -96,6 +97,79 @@ private fun AspectRatioMenu(
         }
     }
 }
+
+
+@Composable
+private fun ZoomRuler(
+    zoom: Float,
+    minZoom: Float,
+    maxZoom: Float,
+    onZoomChange: (Float) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val range = (maxZoom - minZoom).coerceAtLeast(0.01f)
+
+    Canvas(
+        modifier = modifier
+            .fillMaxWidth()
+            .height(54.dp)
+            .pointerInput(minZoom, maxZoom) {
+                fun valueAt(x: Float): Float {
+                    val fraction = (x / size.width.toFloat()).coerceIn(0f, 1f)
+                    return minZoom + fraction * range
+                }
+
+                detectTapGestures { offset ->
+                    onZoomChange(valueAt(offset.x))
+                }
+            }
+            .pointerInput(minZoom, maxZoom) {
+                fun valueAt(x: Float): Float {
+                    val fraction = (x / size.width.toFloat()).coerceIn(0f, 1f)
+                    return minZoom + fraction * range
+                }
+
+                detectDragGestures(
+                    onDragStart = { offset ->
+                        onZoomChange(valueAt(offset.x))
+                    },
+                    onDrag = { change, _ ->
+                        change.consume()
+                        onZoomChange(valueAt(change.position.x))
+                    }
+                )
+            }
+    ) {
+        val centerY = size.height / 2f
+        val tickCount =  fiftyTicks
+        val spacing = size.width / (tickCount - 1)
+
+        for (i in 0 until tickCount) {
+            val x = i * spacing
+            val major = i % 5 == 0
+            val tickHeight = if (major) 17.dp.toPx() else 9.dp.toPx()
+
+            drawLine(
+                color = Color.White.copy(alpha = 0.9f),
+                start = Offset(x, centerY - tickHeight / 2f),
+                end = Offset(x, centerY + tickHeight / 2f),
+                strokeWidth = 2.dp.toPx()
+            )
+        }
+
+        val fraction = ((zoom - minZoom) / range).coerceIn(0f, 1f)
+        val markerX = fraction * size.width
+
+        drawLine(
+            color = Color(0xFF00D889),
+            start = Offset(markerX, centerY - 25.dp.toPx()),
+            end = Offset(markerX, centerY + 25.dp.toPx()),
+            strokeWidth = 4.dp.toPx()
+        )
+    }
+}
+
+private const val fiftyTicks = 51
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -200,9 +274,17 @@ fun CameraScreen() {
     val shutterScale by animateFloatAsState(targetValue = if (isShutterPressed) 0.8f else 1f, animationSpec = spring(dampingRatio = 0.6f, stiffness = 300f), label = "shutter")
     
     BoxWithConstraints(modifier = Modifier.fillMaxSize().background(Color.Black)) {
-        // Portrait preview dimensions for the selected photo ratio.
-        val previewAspectRatio = selectedAspectRatio.width.toFloat() /
-            selectedAspectRatio.height.toFloat()
+        // Match the visible preview frame to the phone's current orientation.
+        val displayRotation = previewViewRef?.display?.rotation
+            ?: android.view.Surface.ROTATION_0
+        val isPortrait = displayRotation == android.view.Surface.ROTATION_0 ||
+            displayRotation == android.view.Surface.ROTATION_180
+
+        val previewAspectRatio = if (isPortrait) {
+            selectedAspectRatio.height.toFloat() / selectedAspectRatio.width.toFloat()
+        } else {
+            selectedAspectRatio.width.toFloat() / selectedAspectRatio.height.toFloat()
+        }
         val previewWidth = minOf(maxWidth, maxHeight * previewAspectRatio)
         val previewHeight = previewWidth / previewAspectRatio
 
@@ -249,6 +331,40 @@ fun CameraScreen() {
                 drawLine(c, Offset(0f, h / 3f), Offset(w, h / 3f), 2f); drawLine(c, Offset(0f, 2f * h / 3f), Offset(w, 2f * h / 3f), 2f)
             }
         }
+        // Center zoom readout and draggable ruler, matching the reference camera UI.
+        val currentZoomState = camera?.cameraInfo?.zoomState?.value
+        val minZoom = currentZoomState?.minZoomRatio ?: 1f
+        val maxZoom = currentZoomState?.maxZoomRatio ?: 1f
+        val safeMaxZoom = maxOf(maxZoom, minZoom + 0.01f)
+
+        Box(
+            modifier = Modifier
+                .width(previewWidth)
+                .height(previewHeight)
+                .align(Alignment.Center)
+        ) {
+            Text(
+                text = String.format(Locale.US, "%.1fx", selectedZoomRatio),
+                color = Color.White,
+                fontSize = 48.sp,
+                fontWeight = FontWeight.Normal,
+                modifier = Modifier.align(Alignment.Center)
+            )
+
+            ZoomRuler(
+                zoom = selectedZoomRatio.coerceIn(minZoom, safeMaxZoom),
+                minZoom = minZoom,
+                maxZoom = safeMaxZoom,
+                onZoomChange = { value ->
+                    selectedZoomRatio = value
+                    camera?.cameraControl?.setZoomRatio(value)
+                },
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(bottom = 150.dp)
+            )
+        }
+
         if (showCaptureFlash) Box(modifier = Modifier.fillMaxSize().background(Color.White.copy(alpha = 0.55f)))
         
         Column(modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.SpaceBetween) {
@@ -274,54 +390,6 @@ fun CameraScreen() {
                 }
                 IconButton(onClick = { flashOn = !flashOn }) {
                     Text(text = if (flashOn) "⚡" else "○", color = if (flashOn) Color(0xFFFFD700) else Color.White, fontSize = 24.sp)
-                }
-            }
-
-            // Zoom presets: unavailable hardware zoom levels are disabled.
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 12.dp),
-                horizontalArrangement = Arrangement.Center,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                val zoomState = camera?.cameraInfo?.zoomState?.value
-
-                listOf(0.5f, 1f, 2f, 5f).forEach { zoom ->
-                    val supported = zoomState != null &&
-                        zoom >= zoomState.minZoomRatio &&
-                        zoom <= zoomState.maxZoomRatio
-
-                    val selected = kotlin.math.abs(selectedZoomRatio - zoom) < 0.01f
-
-                    Card(
-                        shape = RoundedCornerShape(20.dp),
-                        colors = CardDefaults.cardColors(
-                            containerColor = if (selected) Color(0xFFFFD700)
-                            else Color.Black.copy(alpha = 0.7f)
-                        ),
-                        modifier = Modifier
-                            .padding(horizontal = 5.dp)
-                            .clickable(enabled = supported) {
-                                camera?.cameraControl?.setZoomRatio(zoom)
-                                selectedZoomRatio = zoom
-                            }
-                    ) {
-                        Text(
-                            text = "${zoom}x",
-                            color = when {
-                                !supported -> Color.Gray
-                                selected -> Color.Black
-                                else -> Color.White
-                            },
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.Bold,
-                            modifier = Modifier.padding(
-                                horizontal = 14.dp,
-                                vertical = 9.dp
-                            )
-                        )
-                    }
                 }
             }
 
