@@ -1,7 +1,6 @@
 package com.lunageralddlsjbc.icamerapro17.gallery
 
 import android.content.Intent
-import android.net.Uri
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
@@ -18,22 +17,21 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import java.io.File
 
 @Composable
 fun GalleryThumbnail(lastMediaPath: String?, modifier: Modifier = Modifier) {
     val context = LocalContext.current
     Card(
         modifier = modifier.size(60.dp).clip(RoundedCornerShape(8.dp)).clickable {
-            if (lastMediaPath != null) {
-                val file = File(lastMediaPath)
-                if (file.exists()) {
-                    val intent = Intent(Intent.ACTION_VIEW).apply {
-                        setDataAndType(Uri.fromFile(file), "image/*")
-                        flags = Intent.FLAG_ACTIVITY_NEW_TASK
-                    }
-                    context.startActivity(intent)
+            try {
+                // Safe Intent that won't crash on modern Android
+                val intent = Intent(Intent.ACTION_VIEW).apply {
+                    type = "image/*"
+                    flags = Intent.FLAG_ACTIVITY_NEW_TASK
                 }
+                context.startActivity(intent)
+            } catch (e: Exception) {
+                e.printStackTrace()
             }
         },
         colors = CardDefaults.cardColors(containerColor = Color.DarkGray)

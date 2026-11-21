@@ -204,9 +204,9 @@ fun CameraScreen() {
                                 takePhoto(imageCapture, cameraExecutor, context, isHdrEnabled, currentStyle) { path -> 
                                     lastMediaPath = path
                                     GlobalScope.launch(Dispatchers.IO) {
-                                        val file = File(path)
-                                        if (file.exists()) {
-                                            val bitmap = BitmapFactory.decodeFile(path)
+                                        val uri = android.net.Uri.parse(path)
+                                        if (path.isNotEmpty()) {
+                                            val bitmap = context.contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it) }
                                             if (bitmap != null) {
                                                 val score = ImageQualityScorer.analyzeImage(bitmap)
                                                 withContext(Dispatchers.Main) { photoScore = score }
@@ -271,7 +271,7 @@ private fun takePhoto(imageCapture: ImageCapture?, executor: ExecutorService, co
     }
     val outputOptions = ImageCapture.OutputFileOptions.Builder(context.contentResolver, MediaStore.Images.Media.EXTERNAL_CONTENT_URI, contentValues).build()
     imageCapture.takePicture(outputOptions, executor, object : ImageCapture.OnImageSavedCallback {
-        override fun onImageSaved(output: ImageCapture.OutputFileResults) { onSaved(output.savedUri?.path ?: "") }
+        override fun onImageSaved(output: ImageCapture.OutputFileResults) { onSaved(output.savedUri?.toString() ?: "") }
         override fun onError(exc: ImageCaptureException) { Log.e("Camera", "Capture failed: ${exc.message}", exc) }
     })
 }
