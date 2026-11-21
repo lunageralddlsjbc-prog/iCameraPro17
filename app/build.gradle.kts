@@ -31,15 +31,19 @@ android {
 }
 
 dependencies {
-    val composeBom = platform("androidx.compose:compose-bom:20240401")
-    implementation(composeBom)
+    // Core Android
     implementation("androidx.core:core-ktx:1.12.0")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.7.0")
     implementation("androidx.activity:activity-compose:1.8.2")
+
+    // Compose BOM (Fixed version format: 2024.04.01)
+    val composeBom = platform("androidx.compose:compose-bom:2024.04.01")
+    implementation(composeBom)
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.ui:ui-graphics")
     implementation("androidx.compose.material3:material3")
-    
+    debugImplementation("androidx.compose.ui:ui-tooling:1.6.1")
+
     // CameraX
     val cameraxVersion = "1.3.1"
     implementation("androidx.camera:camera-core:$cameraxVersion")
@@ -47,12 +51,10 @@ dependencies {
     implementation("androidx.camera:camera-lifecycle:$cameraxVersion")
     implementation("androidx.camera:camera-video:$cameraxVersion")
     implementation("androidx.camera:camera-view:$cameraxVersion")
-    
+
     // Coroutines & ML Kit
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.7.3")
     implementation("com.google.mlkit:face-detection:16.1.5")
     implementation("androidx.datastore:datastore-preferences:1.0.0")
-    
-    debugImplementation("androidx.compose.ui:ui-tooling")
 }
