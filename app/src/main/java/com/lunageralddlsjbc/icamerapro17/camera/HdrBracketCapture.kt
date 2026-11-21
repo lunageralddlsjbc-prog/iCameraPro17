@@ -1,8 +1,8 @@
 package com.lunageralddlsjbc.icamerapro17.camera
 
 import android.content.Context
-import android.hardware.camera2.Camera
 import android.util.Log
+import androidx.camera.core.Camera
 import androidx.camera.core.ImageCapture
 import androidx.camera.core.ImageCaptureException
 import com.google.common.util.concurrent.ListenableFuture
@@ -10,6 +10,7 @@ import java.io.File
 import java.util.concurrent.Executor
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
+import kotlin.math.roundToInt
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.suspendCancellableCoroutine
 
@@ -36,7 +37,7 @@ object HdrBracketCapture {
         }
 
         val range = state.exposureCompensationRange
-        val stepEv = state.exposureCompensationStep.toFloat()
+        val stepEv: Float = state.exposureCompensationStep.toFloat()
         val baseIndex = state.exposureCompensationIndex
 
         check(stepEv > 0f && stepEv.isFinite()) {
@@ -45,8 +46,8 @@ object HdrBracketCapture {
 
         val requestedEv = listOf(-1.5f, 0f, 1.5f)
         val frames = requestedEv.map { ev ->
-            val index = (baseIndex + (ev / stepEv).toInt())
-                .coerceIn(range.lower, range.upper)
+            val offset: Int = (ev / stepEv).roundToInt()
+            val index = (baseIndex + offset).coerceIn(range.lower, range.upper)
 
             HdrBracketFrame(
                 file = File(context.cacheDir, "unused"),
@@ -74,7 +75,6 @@ object HdrBracketCapture {
                     )
                 )
 
-                // Allow the camera's repeating request to settle.
                 delay(180)
 
                 val outputFile = File(
@@ -82,12 +82,7 @@ object HdrBracketCapture {
                     "HDR_${System.nanoTime()}_$position.jpg"
                 )
 
-                captureFrame(
-                    imageCapture,
-                    outputFile,
-                    callbackExecutor
-                )
-
+                captureFrame(imageCapture, outputFile, callbackExecutor)
                 captured.add(frame.copy(file = outputFile))
             }
 
@@ -110,27 +105,25 @@ object HdrBracketCapture {
         }
     }
 
-    private suspend fun awaitExposure(
-        future: ListenableFuture<Void>
-    ) = suspendCancellableCoroutine<Unit> { continuation ->
-        future.addListener({
-            try {
-                future.get()
-                if (continuation.isActive) continuation.resume(Unit)
-            } catch (error: Exception) {
-                if (continuation.isActive) {
-                    continuation.resumeWithException(error)
+    private suspend fun awaitExposure(future: ListenableFuture<Void>) =
+        suspendCancellableCoroutine<Unit> { continuation ->
+            future.addListener({
+                try {
+                    future.get()
+                    if (continuation.isActive) continuation.resume(Unit)
+                } catch (error: Exception) {
+                    if (continuation.isActive) {
+                        continuation.resumeWithException(error)
+                    }
                 }
-            }
-        }, directExecutor)
-    }
+            }, directExecutor)
+        }
 
     private suspend fun captureFrame(
         imageCapture: ImageCapture,
         file: File,
         executor: Executor
     ) = suspendCancellableCoroutine<Unit> { continuation ->
-
         val options = ImageCapture.OutputFileOptions.Builder(file).build()
 
         imageCapture.takePicture(
@@ -150,6 +143,7 @@ object HdrBracketCapture {
                 }
 
                 override fun onError(exception: ImageCaptureException) {
+                    file.delete()
                     if (continuation.isActive) {
                         continuation.resumeWithException(exception)
                     }
