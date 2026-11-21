@@ -111,6 +111,32 @@ private fun AspectRatioMenu(
 
 
 @Composable
+private fun QuickMenuTile(
+    title: String,
+    value: String,
+    active: Boolean,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit
+) {
+    Card(
+        modifier = modifier.fillMaxWidth().clickable(onClick = onClick),
+        shape = RoundedCornerShape(14.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = if (active) Color(0xFF174D3A) else Color(0xFF292929)
+        )
+    ) {
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp, horizontal = 6.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text(title, color = Color.LightGray, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+            Spacer(Modifier.height(5.dp))
+            Text(value, color = if (active) Color(0xFF00D889) else Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+        }
+    }
+}
+
+@Composable
 private fun ZoomRuler(
     zoom: Float,
     minZoom: Float,
@@ -194,6 +220,7 @@ fun CameraScreen() {
     var gridEnabled by remember { mutableStateOf(false) }
     var hardwareReport by remember { mutableStateOf<String?>(null) }
     var aeAfLocked by remember { mutableStateOf(false) }
+    var quickMenuExpanded by remember { mutableStateOf(false) }
 
     val cameraSettings = remember {
         context.getSharedPreferences("icamera_settings", Context.MODE_PRIVATE)
@@ -496,130 +523,20 @@ fun CameraScreen() {
         Column(modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.SpaceBetween) {
             Row(
                 modifier = Modifier.fillMaxWidth().padding(top = 50.dp, start = 16.dp, end = 16.dp),
-                verticalAlignment = Alignment.CenterVertically
+                horizontalArrangement = Arrangement.Center
             ) {
                 Card(
-                    shape = RoundedCornerShape(20.dp),
-                    colors = CardDefaults.cardColors(containerColor = Color.Black.copy(alpha = 0.6f)),
-                    modifier = Modifier.clickable {
-                        GlobalScope.launch(Dispatchers.IO) {
-                            val report = try {
-                                CameraHardwareInspector.createReport(context)
-                            } catch (e: Exception) {
-                                "Camera inspection failed: ${e.message}"
-                            }
-                            withContext(Dispatchers.Main) { hardwareReport = report }
-                        }
-                    }
+                    shape = RoundedCornerShape(22.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color.Black.copy(alpha = 0.72f)),
+                    modifier = Modifier.clickable { quickMenuExpanded = true }
                 ) {
                     Text(
-                        text = "DEVICE",
-                        color = Color(0xFF00D889),
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
-                    )
-                }
-                Card(
-                    shape = RoundedCornerShape(20.dp),
-                    colors = CardDefaults.cardColors(containerColor = Color.Black.copy(alpha = 0.6f)),
-                    modifier = Modifier.clickable { gridEnabled = !gridEnabled }
-                ) {
-                    Text(
-                        text = if (gridEnabled) "GRID ON" else "GRID OFF",
-                        color = if (gridEnabled) Color(0xFFFFD700) else Color.Gray,
+                        text = "QUICK MENU  ▾",
+                        color = Color.White,
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Bold,
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+                        modifier = Modifier.padding(horizontal = 20.dp, vertical = 10.dp)
                     )
-                }
-
-                Card(
-                    shape = RoundedCornerShape(20.dp),
-                    colors = CardDefaults.cardColors(
-                        containerColor = if (cinematicModeEnabled) Color(0xFF174D3A) else Color.Black.copy(alpha = 0.6f)
-                    ),
-                    modifier = Modifier.clickable(enabled = !isRecording) {
-                        cinematicModeEnabled = !cinematicModeEnabled
-                        cameraSettings.edit()
-                            .putBoolean("cinematic_mode", cinematicModeEnabled)
-                            .apply()
-                    }
-                ) {
-                    Text(
-                        text = if (cinematicModeEnabled) "CINEMA UHD*" else "CINEMA",
-                        color = if (cinematicModeEnabled) Color(0xFF00D889) else Color.White,
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 7.dp)
-                    )
-                }
-
-                Card(
-                    shape = RoundedCornerShape(20.dp),
-                    colors = CardDefaults.cardColors(
-                        containerColor = if (portraitModeEnabled) Color(0xFF174D3A) else Color.Black.copy(alpha = 0.6f)
-                    ),
-                    modifier = Modifier.clickable {
-                        portraitModeEnabled = !portraitModeEnabled
-                        cameraSettings.edit().putBoolean("portrait_mode", portraitModeEnabled).apply()
-                    }
-                ) {
-                    Text(
-                        text = if (portraitModeEnabled) "PORTRAIT ON" else "PORTRAIT",
-                        color = if (portraitModeEnabled) Color(0xFF00D889) else Color.White,
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 7.dp)
-                    )
-                }
-
-                Card(
-                    shape = RoundedCornerShape(20.dp),
-                    colors = CardDefaults.cardColors(
-                        containerColor = if (extendedExposureEnabled) Color(0xFF174D3A) else Color.Black.copy(alpha = 0.6f)
-                    ),
-                    modifier = Modifier.clickable {
-                        extendedExposureEnabled = !extendedExposureEnabled
-                        cameraSettings.edit()
-                            .putBoolean("extended_exposure", extendedExposureEnabled)
-                            .apply()
-                    }
-                ) {
-                    Text(
-                        text = if (extendedExposureEnabled) "EXT -1EV ON" else "EXT OFF",
-                        color = if (extendedExposureEnabled) Color(0xFF00D889) else Color.LightGray,
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 7.dp)
-                    )
-                }
-                Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.Center) {
-                    AspectRatioMenu(selectedAspectRatio) { selectedAspectRatio = it }
-                }
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(
-                        text = if (autoEnhanceEnabled) "AUTO AI ON" else "AUTO AI OFF",
-                        color = if (autoEnhanceEnabled) Color(0xFF34C759) else Color.LightGray,
-                        fontSize = 9.sp,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.clickable {
-                            autoEnhanceEnabled = !autoEnhanceEnabled
-                            cameraSettings.edit().putBoolean("auto_enhance", autoEnhanceEnabled).apply()
-                        }.padding(3.dp)
-                    )
-                    Text(
-                        text = if (keepOriginalBackup) "BACKUP ON" else "BACKUP OFF",
-                        color = if (keepOriginalBackup) Color(0xFFFFD700) else Color.LightGray,
-                        fontSize = 9.sp,
-                        modifier = Modifier.clickable {
-                            keepOriginalBackup = !keepOriginalBackup
-                            cameraSettings.edit().putBoolean("keep_original_backup", keepOriginalBackup).apply()
-                        }.padding(3.dp)
-                    )
-                }
-                IconButton(onClick = { flashOn = !flashOn }) {
-                    Text(text = if (flashOn) "⚡" else "○", color = if (flashOn) Color(0xFFFFD700) else Color.White, fontSize = 24.sp)
                 }
             }
 
@@ -732,6 +649,79 @@ fun CameraScreen() {
         }
     }
     
+    if (quickMenuExpanded) {
+        ModalBottomSheet(
+            onDismissRequest = { quickMenuExpanded = false },
+            containerColor = Color(0xFF171717)
+        ) {
+            Column(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(bottom = 28.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Text(
+                    "CAMERA QUICK MENU",
+                    color = Color.White,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.align(Alignment.CenterHorizontally)
+                )
+
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    QuickMenuTile("FLASH", if (flashOn) "ON" else "OFF", flashOn, Modifier.weight(1f)) { flashOn = !flashOn }
+                    Column(
+                        modifier = Modifier.weight(1f).fillMaxWidth().background(Color(0xFF292929), RoundedCornerShape(14.dp)).padding(8.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center
+                    ) {
+                        Text("ASPECT", color = Color.LightGray, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                        Spacer(Modifier.height(5.dp))
+                        AspectRatioMenu(selectedAspectRatio) { selectedAspectRatio = it }
+                    }
+                    QuickMenuTile("GRID", if (gridEnabled) "ON" else "OFF", gridEnabled, Modifier.weight(1f)) { gridEnabled = !gridEnabled }
+                }
+
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    QuickMenuTile("CINEMATIC", if (cinematicModeEnabled) "ON" else "OFF", cinematicModeEnabled, Modifier.weight(1f)) {
+                        if (!isRecording) {
+                            cinematicModeEnabled = !cinematicModeEnabled
+                            cameraSettings.edit().putBoolean("cinematic_mode", cinematicModeEnabled).apply()
+                        }
+                    }
+                    QuickMenuTile("PORTRAIT", if (portraitModeEnabled) "ON" else "OFF", portraitModeEnabled, Modifier.weight(1f)) {
+                        portraitModeEnabled = !portraitModeEnabled
+                        cameraSettings.edit().putBoolean("portrait_mode", portraitModeEnabled).apply()
+                    }
+                    QuickMenuTile("EXTENDED", if (extendedExposureEnabled) "-1 EV" else "OFF", extendedExposureEnabled, Modifier.weight(1f)) {
+                        extendedExposureEnabled = !extendedExposureEnabled
+                        cameraSettings.edit().putBoolean("extended_exposure", extendedExposureEnabled).apply()
+                    }
+                }
+
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    QuickMenuTile("AUTO AI", if (autoEnhanceEnabled) "ON" else "OFF", autoEnhanceEnabled, Modifier.weight(1f)) {
+                        autoEnhanceEnabled = !autoEnhanceEnabled
+                        cameraSettings.edit().putBoolean("auto_enhance", autoEnhanceEnabled).apply()
+                    }
+                    QuickMenuTile("ORIGINAL BACKUP", if (keepOriginalBackup) "ON" else "OFF", keepOriginalBackup, Modifier.weight(1f)) {
+                        keepOriginalBackup = !keepOriginalBackup
+                        cameraSettings.edit().putBoolean("keep_original_backup", keepOriginalBackup).apply()
+                    }
+                    QuickMenuTile("DEVICE INFO", "OPEN", false, Modifier.weight(1f)) {
+                        GlobalScope.launch(Dispatchers.IO) {
+                            val report = try {
+                                CameraHardwareInspector.createReport(context)
+                            } catch (e: Exception) {
+                                "Camera inspection failed: ${e.message}"
+                            }
+                            withContext(Dispatchers.Main) { hardwareReport = report }
+                        }
+                        quickMenuExpanded = false
+                    }
+                }
+            }
+        }
+    }
+
     if (hardwareReport != null) {
         AlertDialog(
             onDismissRequest = { hardwareReport = null },
