@@ -595,23 +595,43 @@ private fun takePhoto(
     imageCapture.takePicture(outputOptions, executor, object : ImageCapture.OnImageSavedCallback {
         override fun onImageSaved(output: ImageCapture.OutputFileResults) {
             output.savedUri?.let { uri ->
+                var displayUri = uri
                 try {
-                    // Preserve the unprocessed capture only when the backup option is enabled.
-                    if (keepOriginalBackup) {
-                        backupOriginalPhoto(context, uri)
+                    // Always preserve an untouched original, independently of the optional backup setting.
+                    val copies = com.lunageralddlsjbc.icamerapro17.camera.PhotoStorageManager
+                        .createCopies(context, uri, keepOriginalBackup)
+
+                    displayUri = copies.enhancedUri
+
+                    // Process only the separate Enhanced copy. The Original is never modified.
+                    if (autoEnhance) {
+                        if (com.lunageralddlsjbc.icamerapro17.camera.PhotoStorageManager
+                                .canEnhanceSafely(context, copies.enhancedUri)) {
+                            try {
+                                AutoPhotoEnhancer.enhance(context, copies.enhancedUri)
+                            } catch (e: Exception) {
+                                Log.e("Camera", "Enhancement failed; retaining unmodified enhanced copy", e)
+                            }
+                        } else {
+                            Log.w("Camera", "Enhancement skipped to protect available memory")
+                        }
                     }
 
-                    // First apply the selected output dimensions, then enhance those saved pixels.
-                    normalizeCapturedPhoto(context, uri, aspectRatio)
-
-                    if (autoEnhance) {
-                        AutoPhotoEnhancer.enhance(context, uri)
+                    // Restore available camera metadata after the JPEG has been rewritten.
+                    try {
+                        com.lunageralddlsjbc.icamerapro17.camera.PhotoStorageManager
+                            .restoreExifMetadata(context, copies.originalUri, copies.enhancedUri)
+                    } catch (e: Exception) {
+                        Log.e("Camera", "Could not restore all EXIF metadata", e)
                     }
                 } catch (e: Exception) {
-                    Log.e("Camera", "Photo processing failed; keeping captured image: ${e.message}", e)
+                    // The original CameraX capture remains untouched if copy creation fails.
+                    Log.e("Camera", "Phase 2A storage failed; showing original capture", e)
+                    displayUri = uri
                 }
+
                 ContextCompat.getMainExecutor(context).execute {
-                    onSaved(uri)
+                    onSaved(displayUri)
                 }
             }
         }
