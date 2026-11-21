@@ -50,6 +50,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import com.lunageralddlsjbc.icamerapro17.ai.ImageQualityScorer
+import com.lunageralddlsjbc.icamerapro17.ai.AutoPhotoEnhancer
 import com.lunageralddlsjbc.icamerapro17.ai.PhotoScore
 import java.text.SimpleDateFormat
 import java.util.*
@@ -189,6 +190,17 @@ fun CameraScreen() {
     var showCaptureFlash by remember { mutableStateOf(false) }
     var photoScore by remember { mutableStateOf<PhotoScore?>(null) }
     var gridEnabled by remember { mutableStateOf(false) }
+
+    val cameraSettings = remember {
+        context.getSharedPreferences("icamera_settings", Context.MODE_PRIVATE)
+    }
+    var autoEnhanceEnabled by remember {
+        mutableStateOf(cameraSettings.getBoolean("auto_enhance", true))
+    }
+    var keepOriginalBackup by remember {
+        mutableStateOf(cameraSettings.getBoolean("keep_original_backup", false))
+    }
+
     var selectedAspectRatio by remember { mutableStateOf(CameraAspectRatio.RATIO_4_3) }
     var selectedZoomRatio by remember { mutableStateOf(1f) }
     var showZoomRuler by remember { mutableStateOf(false) }
@@ -410,6 +422,27 @@ fun CameraScreen() {
                 Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.Center) {
                     AspectRatioMenu(selectedAspectRatio) { selectedAspectRatio = it }
                 }
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(
+                        text = if (autoEnhanceEnabled) "AUTO AI ON" else "AUTO AI OFF",
+                        color = if (autoEnhanceEnabled) Color(0xFF34C759) else Color.LightGray,
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.clickable {
+                            autoEnhanceEnabled = !autoEnhanceEnabled
+                            cameraSettings.edit().putBoolean("auto_enhance", autoEnhanceEnabled).apply()
+                        }.padding(3.dp)
+                    )
+                    Text(
+                        text = if (keepOriginalBackup) "BACKUP ON" else "BACKUP OFF",
+                        color = if (keepOriginalBackup) Color(0xFFFFD700) else Color.LightGray,
+                        fontSize = 9.sp,
+                        modifier = Modifier.clickable {
+                            keepOriginalBackup = !keepOriginalBackup
+                            cameraSettings.edit().putBoolean("keep_original_backup", keepOriginalBackup).apply()
+                        }.padding(3.dp)
+                    )
+                }
                 IconButton(onClick = { flashOn = !flashOn }) {
                     Text(text = if (flashOn) "⚡" else "○", color = if (flashOn) Color(0xFFFFD700) else Color.White, fontSize = 24.sp)
                 }
@@ -438,7 +471,7 @@ fun CameraScreen() {
                             if (!isRecording) {
                                 showCaptureFlash = true
                                 GlobalScope.launch(Dispatchers.Main) { delay(150); showCaptureFlash = false }
-                                takePhoto(imageCapture, cameraExecutor, context, selectedAspectRatio) { uri -> 
+                                takePhoto(imageCapture, cameraExecutor, context, selectedAspectRatio, autoEnhanceEnabled, keepOriginalBackup) { uri -> 
                                     lastMediaUri = uri
                                     GlobalScope.launch(Dispatchers.IO) {
                                         try {
@@ -492,6 +525,8 @@ private fun takePhoto(
     executor: ExecutorService,
     context: Context,
     aspectRatio: CameraAspectRatio,
+    autoEnhance: Boolean,
+    keepOriginalBackup: Boolean,
     onSaved: (Uri) -> Unit
 ) {
     if (imageCapture == null) return
@@ -515,9 +550,19 @@ private fun takePhoto(
         override fun onImageSaved(output: ImageCapture.OutputFileResults) {
             output.savedUri?.let { uri ->
                 try {
+                    // Preserve the unprocessed capture only when the backup option is enabled.
+                    if (keepOriginalBackup) {
+                        backupOriginalPhoto(context, uri)
+                    }
+
+                    // First apply the selected output dimensions, then enhance those saved pixels.
                     normalizeCapturedPhoto(context, uri, aspectRatio)
+
+                    if (autoEnhance) {
+                        AutoPhotoEnhancer.enhance(context, uri)
+                    }
                 } catch (e: Exception) {
-                    Log.e("Camera", "Photo resize/crop failed: ${e.message}", e)
+                    Log.e("Camera", "Photo processing failed; keeping captured image: ${e.message}", e)
                 }
                 ContextCompat.getMainExecutor(context).execute {
                     onSaved(uri)
@@ -535,6 +580,35 @@ private fun takePhoto(
  * Applies JPEG orientation, center-crops without stretching, and saves the
  * exact requested pixel dimensions back to the same MediaStore image.
  */
+private fun backupOriginalPhoto(context: Context, sourceUri: Uri) {
+    val values = ContentValues().apply {
+        put(MediaStore.Images.Media.DISPLAY_NAME, "ORIGINAL_${System.currentTimeMillis()}.jpg")
+        put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg")
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            put(MediaStore.Images.Media.RELATIVE_PATH, Environment.DIRECTORY_PICTURES + "/iCamera Pro 17 Originals")
+        }
+    }
+
+    val backupUri = context.contentResolver.insert(
+        MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+        values
+    ) ?: throw IllegalStateException("Could not create original backup")
+
+    try {
+        context.contentResolver.openInputStream(sourceUri).use { input ->
+            context.contentResolver.openOutputStream(backupUri).use { output ->
+                if (input == null || output == null) {
+                    throw IllegalStateException("Could not copy original photo")
+                }
+                input.copyTo(output)
+            }
+        }
+    } catch (e: Exception) {
+        context.contentResolver.delete(backupUri, null, null)
+        throw e
+    }
+}
+
 private fun normalizeCapturedPhoto(
     context: Context,
     uri: Uri,
