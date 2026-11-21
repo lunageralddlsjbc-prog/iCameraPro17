@@ -149,7 +149,7 @@ fun CameraScreen() {
                 drawLine(c, Offset(0f, h / 3f), Offset(w, h / 3f), 2f); drawLine(c, Offset(0f, 2f * h / 3f), Offset(w, 2f * h / 3f), 2f)
             }
         }
-        if (showCaptureFlash) Box(modifier = Modifier.fillMaxSize().background(Color.White.copy(alpha = 0.9f)))
+        if (showCaptureFlash) Box(modifier = Modifier.fillMaxSize().background(Color.White.copy(alpha = 0.55f)))
         
         Column(modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.SpaceBetween) {
             Row(modifier = Modifier.fillMaxWidth().padding(top = 50.dp, start = 16.dp, end = 16.dp), horizontalArrangement = Arrangement.SpaceBetween) {
@@ -162,13 +162,8 @@ fun CameraScreen() {
             Box(modifier = Modifier.fillMaxWidth().background(brush = Brush.verticalGradient(colors = listOf(Color.Transparent, Color.Black.copy(alpha = 0.9f)))).padding(bottom = 30.dp)) {
                 Card(
                     modifier = Modifier.align(Alignment.BottomStart).padding(start = 24.dp, bottom = 90.dp).size(60.dp).clip(RoundedCornerShape(8.dp)).clickable {
-                        lastMediaUri?.let { uri ->
-                            val intent = android.content.Intent(android.content.Intent.ACTION_VIEW).apply {
-                                setDataAndType(uri, "image/*")
-                                flags = android.content.Intent.FLAG_ACTIVITY_NEW_TASK
-                            }
-                            context.startActivity(intent)
-                        }
+                        val gi = android.content.Intent(android.content.Intent.ACTION_MAIN).apply { addCategory(android.content.Intent.CATEGORY_APP_GALLERY); flags = android.content.Intent.FLAG_ACTIVITY_NEW_TASK or android.content.Intent.FLAG_ACTIVITY_CLEAR_TASK }
+                        if (gi.resolveActivity(context.packageManager) != null) context.startActivity(gi) else context.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW).apply { setDataAndType(android.provider.MediaStore.Images.Media.EXTERNAL_CONTENT_URI, "image/*"); flags = android.content.Intent.FLAG_ACTIVITY_NEW_TASK })
                     },
                     colors = CardDefaults.cardColors(containerColor = Color.DarkGray)
                 ) {
@@ -181,7 +176,7 @@ fun CameraScreen() {
                     Spacer(modifier = Modifier.width(40.dp))
                     val shutterColor by animateColorAsState(targetValue = if (isRecording) Color.Red else Color.White, label = "shutter")
                     Box(
-                        modifier = Modifier.size(76.dp).scale(shutterScale).border(4.dp, Color.White.copy(alpha = 0.9f), CircleShape).padding(4.dp).background(shutterColor, CircleShape).clickable { 
+                        modifier = Modifier.size(76.dp).scale(shutterScale).border(4.dp, Color.White.copy(alpha = 0.55f), CircleShape).padding(4.dp).background(shutterColor, CircleShape).clickable { 
                             isShutterPressed = true
                             GlobalScope.launch(Dispatchers.Main) { delay(100); isShutterPressed = false }
                             if (!isRecording) {
@@ -204,7 +199,7 @@ fun CameraScreen() {
                                 activeRecording = null
                                 isRecording = false
                             }
-                        }.pointerInput(Unit) { detectTapGestures(onPress = { isShutterPressed = true; tryAwaitRelease(); isShutterPressed = false }) },
+                        },
                         contentAlignment = Alignment.Center
                     ) { if (isRecording) Box(modifier = Modifier.size(24.dp).clip(RoundedCornerShape(4.dp)).background(Color.White)) }
                     IconButton(onClick = { isFrontCamera = !isFrontCamera }) { Text("🔄", color = Color.White, fontSize = 24.sp) }
