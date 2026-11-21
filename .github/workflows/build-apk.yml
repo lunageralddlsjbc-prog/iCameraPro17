@@ -1,5 +1,4 @@
 name: Build APK
-
 on:
   push:
     branches: [ main ]
@@ -8,57 +7,18 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-      
+    - uses: actions/checkout@v4
     - name: Set up JDK 17
       uses: actions/setup-java@v4
       with:
         java-version: '17'
         distribution: 'temurin'
-        
-    - name: Setup Gradle Wrapper
-      run: |
-        mkdir -p gradle/wrapper
-        if [ ! -f gradle/wrapper/gradle-wrapper.jar ]; then
-          curl -L https://raw.githubusercontent.com/gradle/gradle/master/gradle/wrapper/gradle-wrapper.jar -o gradle/wrapper/gradle-wrapper.jar
-        fi
-        
-        if [ ! -f gradlew ]; then
-          echo '#!/bin/sh' > gradlew
-          echo 'APP_HOME=$( cd "${0%/*}" && pwd -P ) || exit' >> gradlew
-          echo 'CLASSPATH=$APP_HOME/gradle/wrapper/gradle-wrapper.jar' >> gradlew
-          echo 'exec java -classpath "$CLASSPATH" org.gradle.wrapper.GradleWrapperMain "$@"' >> gradlew
-          chmod +x gradlew
-        fi
-        
-        if [ ! -f gradle/wrapper/gradle-wrapper.properties ]; then
-          echo 'distributionBase=GRADLE_USER_HOME' > gradle/wrapper/gradle-wrapper.properties
-          echo 'distributionPath=wrapper/dists' >> gradle/wrapper/gradle-wrapper.properties
-          echo 'distributionUrl=https\://services.gradle.org/distributions/gradle-9.9.2-bin.zip' >> gradle/wrapper/gradle-wrapper.properties
-          echo 'zipStoreBase=GRADLE_USER_HOME' >> gradle/wrapper/gradle-wrapper.properties
-          echo 'zipStorePath=wrapper/dists' >> gradle/wrapper/gradle-wrapper.properties
-        fi
-        
-    - name: Cache Gradle dependencies
-      uses: actions/cache@v4
-      with:
-        path: |
-          ~/.gradle/caches
-          ~/.gradle/wrapper
-        key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle.kts', '**/gradle-wrapper.properties') }}
-        restore-keys: |
-          ${{ runner.os }}-gradle-
-        
-    # FIXED: Removed invalid --retry flag
+    - name: Setup Gradle
+      uses: gradle/actions/setup-gradle@v3
     - name: Build Debug APK
       run: ./gradlew assembleDebug --no-daemon
-      env:
-        GRADLE_OPTS: "-Dorg.gradle.jvmargs=-Xmx4096m -XX:MaxMetaspaceSize=512m"
-        
-    - name: Upload APK artifact
+    - name: Upload APK
       uses: actions/upload-artifact@v4
       with:
         name: iCamera-Pro-17-APK

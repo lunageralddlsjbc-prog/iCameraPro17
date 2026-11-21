@@ -63,6 +63,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 enum class CaptureMode { PHOTO, VIDEO, PRO }
@@ -73,16 +74,14 @@ fun CameraScreen() {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     
-    val launcher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.RequestMultiplePermissions()
-    ) { perms -> Log.d("Perms", "Granted: ${perms.filter { it.value }.keys}") }
-    
+    val launcher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { perms ->
+        Log.d("Perms", "Granted: ${perms.filter { it.value }.keys}")
+    }
     LaunchedEffect(Unit) { launcher.launch(arrayOf(Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO)) }
     
     var captureMode by remember { mutableStateOf(CaptureMode.PHOTO) }
     var isFrontCamera by remember { mutableStateOf(false) }
     var flashOn by remember { mutableStateOf(false) }
-    var exposureComp by remember { mutableStateOf(0) }
     var isHdrEnabled by remember { mutableStateOf(true) }
     var currentStyle by remember { mutableStateOf(PhotographicStyle.STANDARD) }
     var lastMediaPath by remember { mutableStateOf<String?>(null) }
@@ -92,35 +91,28 @@ fun CameraScreen() {
     var photoScore by remember { mutableStateOf<PhotoScore?>(null) }
     
     var gridEnabled by remember { mutableStateOf(false) }
-    var levelEnabled by remember { mutableStateOf(true) }
     var mirrorFront by remember { mutableStateOf(false) }
-    var lensCorrection by remember { mutableStateOf(true) }
     
     LaunchedEffect(Unit) {
         CameraSettingsManager.getGridFlow(context).collectLatest { gridEnabled = it }
-        CameraSettingsManager.getLevelFlow(context).collectLatest { levelEnabled = it }
         CameraSettingsManager.getMirrorFlow(context).collectLatest { mirrorFront = it }
-        CameraSettingsManager.getLensCorrectionFlow(context).collectLatest { lensCorrection = it }
     }
     
     val capabilities = remember { CapabilityManager.detect(context) }
-    
     var previewViewRef by remember { mutableStateOf<androidx.camera.view.PreviewView?>(null) }
     var imageCapture by remember { mutableStateOf<ImageCapture?>(null) }
     var videoCapture by remember { mutableStateOf<VideoCapture<Recorder>?>(null) }
-    var camera by remember { mutableStateOf<Camera?>(null) }
     var activeRecording by remember { mutableStateOf<Recording?>(null) }
     var isRecording by remember { mutableStateOf(false) }
-    
     val cameraExecutor = remember { Executors.newSingleThreadExecutor() }
     
+    // PRAGMATIC BINDING: Preview + Photo always. Video only when needed.
     LaunchedEffect(isFrontCamera, captureMode) {
         val cameraProviderFuture = ProcessCameraProvider.getInstance(context)
         cameraProviderFuture.addListener({
             try {
                 val cameraProvider = cameraProviderFuture.get()
                 cameraProvider.unbindAll()
-                
                 val cameraSelector = if (isFrontCamera) CameraSelector.DEFAULT_FRONT_CAMERA else CameraSelector.DEFAULT_BACK_CAMERA
                 
                 val preview = Preview.Builder().setTargetAspectRatio(AspectRatio.RATIO_4_3).build().also { it.setSurfaceProvider(previewViewRef?.surfaceProvider) }
@@ -134,19 +126,17 @@ fun CameraScreen() {
                     videoCapture = newVideoCapture
                 }
                 
-                camera = cameraProvider.bindToLifecycle(lifecycleOwner, cameraSelector, *useCases.toTypedArray())
+                cameraProvider.bindToLifecycle(lifecycleOwner, cameraSelector, *useCases.toTypedArray())
                 imageCapture = newImageCapture
-                camera?.cameraControl?.setExposureCompensationIndex(0)
                 Log.d("Camera", "✅ Bound successfully")
             } catch (e: Exception) { 
                 Log.e("Camera", "❌ Binding failed: ${e.message}", e)
-                Toast.makeText(context, "Camera Error: ${e.message}", Toast.LENGTH_LONG).show()
+                Toast.makeText(context, "Camera Error", Toast.LENGTH_LONG).show()
             }
         }, ContextCompat.getMainExecutor(context))
     }
     
     LaunchedEffect(flashOn) { imageCapture?.flashMode = if (flashOn) ImageCapture.FLASH_MODE_ON else ImageCapture.FLASH_MODE_OFF }
-    
     val shutterScale by animateFloatAsState(targetValue = if (isShutterPressed) 0.8f else 1f, animationSpec = spring(dampingRatio = 0.6f, stiffness = 300f), label = "shutter")
     
     Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
@@ -160,8 +150,7 @@ fun CameraScreen() {
                         if (event.action == android.view.MotionEvent.ACTION_DOWN) {
                             v.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
                             val factory = androidx.camera.core.SurfaceOrientedMeteringPointFactory(1f, 1f)
-                            val point = factory.createPoint(event.x / v.width, event.y / v.height)
-                            camera?.cameraControl?.startFocusAndMetering(FocusMeteringAction.Builder(point).build())
+                            camera?.cameraControl?.startFocusAndMetering(FocusMeteringAction.Builder(factory.createPoint(event.x / v.width, event.y / v.height)).build())
                         }
                         true
                     }
@@ -242,7 +231,6 @@ fun CameraScreen() {
             Column(modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(16.dp)) {
                 Text("COMPOSITION", color = Color.Gray, fontSize = 12.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(bottom = 8.dp))
                 IphoneSettingSwitch("Grid", gridEnabled) { GlobalScope.launch(Dispatchers.IO) { CameraSettingsManager.toggleGrid(context) } }
-                IphoneSettingSwitch("Level", levelEnabled) { GlobalScope.launch(Dispatchers.IO) { CameraSettingsManager.toggleLevel(context) } }
                 IphoneSettingSwitch("Mirror Front Camera", mirrorFront) { GlobalScope.launch(Dispatchers.IO) { CameraSettingsManager.toggleMirror(context) } }
                 Spacer(modifier = Modifier.height(16.dp))
                 Text("PHOTOGRAPHIC STYLE", color = Color.Gray, fontSize = 12.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(bottom = 8.dp))
@@ -251,9 +239,6 @@ fun CameraScreen() {
                         FilterChip(selected = currentStyle == style, onClick = { currentStyle = style }, label = { Text(style.styleName, fontSize = 10.sp) }, colors = FilterChipDefaults.filterChipColors(selectedContainerColor = Color(0xFFFFD700)))
                     }
                 }
-                Spacer(modifier = Modifier.height(16.dp))
-                Text("LENS", color = Color.Gray, fontSize = 12.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(bottom = 8.dp))
-                IphoneSettingSwitch("Lens Correction", lensCorrection) { GlobalScope.launch(Dispatchers.IO) { CameraSettingsManager.toggleLensCorrection(context) } }
                 Spacer(modifier = Modifier.height(32.dp))
             }
         }
@@ -278,7 +263,7 @@ fun IphoneModeTab(label: String, selected: Boolean, onClick: () -> Unit) {
 }
 
 private fun takePhoto(imageCapture: ImageCapture?, executor: ExecutorService, context: Context, useHdr: Boolean, style: PhotographicStyle, onSaved: (String) -> Unit) {
-    if (imageCapture == null) { Toast.makeText(context, "Error: Camera not ready", Toast.LENGTH_LONG).show(); return }
+    if (imageCapture == null) { Toast.makeText(context, "Camera not ready", Toast.LENGTH_LONG).show(); return }
     val contentValues = ContentValues().apply {
         put(MediaStore.Images.Media.DISPLAY_NAME, "IMG_${SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())}.jpg")
         put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg")
@@ -287,20 +272,20 @@ private fun takePhoto(imageCapture: ImageCapture?, executor: ExecutorService, co
     val outputOptions = ImageCapture.OutputFileOptions.Builder(context.contentResolver, MediaStore.Images.Media.EXTERNAL_CONTENT_URI, contentValues).build()
     imageCapture.takePicture(outputOptions, executor, object : ImageCapture.OnImageSavedCallback {
         override fun onImageSaved(output: ImageCapture.OutputFileResults) { onSaved(output.savedUri?.path ?: "") }
-        override fun onError(exc: ImageCaptureException) { Log.e("Camera", "❌ Capture failed: ${exc.message}", exc) }
+        override fun onError(exc: ImageCaptureException) { Log.e("Camera", "Capture failed: ${exc.message}", exc) }
     })
 }
 
 private fun startRecording(context: Context, videoCapture: VideoCapture<Recorder>?, executor: ExecutorService, onStarted: (Recording) -> Unit) {
-    if (videoCapture == null) { Toast.makeText(context, "Error: Video not ready", Toast.LENGTH_LONG).show(); return }
+    if (videoCapture == null) { Toast.makeText(context, "Video not ready", Toast.LENGTH_LONG).show(); return }
     val contentValues = ContentValues().apply {
         put(MediaStore.Video.Media.DISPLAY_NAME, "VID_${SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())}.mp4")
         put(MediaStore.Video.Media.MIME_TYPE, "video/mp4")
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) put(MediaStore.Video.Media.RELATIVE_PATH, Environment.DIRECTORY_MOVIES + "/iCamera Pro 17")
     }
     val outputFileOptions = MediaStoreOutputOptions.Builder(context.contentResolver, MediaStore.Video.Media.EXTERNAL_CONTENT_URI).setContentValues(contentValues).build()
-    val recording = videoCapture.output.prepareRecording(context, outputFileOptions).withAudioEnabled().start(executor) { event ->
-        when (event) { is VideoRecordEvent.Start -> Log.d("Camera", "Started"); is VideoRecordEvent.Finalize -> Log.d("Camera", "Saved"); else -> {} }
-    }
-    onStarted(recording)
+    videoCapture.output.prepareRecording(context, outputFileOptions).withAudioEnabled().start(executor) { event ->
+        if (event is VideoRecordEvent.Start) Log.d("Camera", "Started")
+        if (event is VideoRecordEvent.Finalize) Log.d("Camera", "Saved")
+    }.let { onStarted(it) }
 }

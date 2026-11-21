@@ -1,91 +1,61 @@
 plugins {
     id("com.android.application")
-    id("org.jetbrains.kotlin.plugin.compose") version "2.4.0"
+    id("org.jetbrains.kotlin.android")
 }
 
 android {
     namespace = "com.lunageralddlsjbc.icamerapro17"
-    compileSdk = 36
-    
+    compileSdk = 35
+
     defaultConfig {
         applicationId = "com.lunageralddlsjbc.icamerapro17"
-        minSdk = 24
-        targetSdk = 36
-        versionCode = 2
-        versionName = "2.0-Phase2"
-        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-        
-        ndk {
-            abiFilters += listOf("arm64-v8a")
-        }
+        minSdk = 26
+        targetSdk = 35
+        versionCode = 1
+        versionName = "1.0"
     }
-    
+
     buildTypes {
         release {
-            isMinifyEnabled = true
+            isMinifyEnabled = false
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
-        debug {
-            isMinifyEnabled = false
-            packaging {
-                jniLibs { useLegacyPackaging = true }
-            }
-        }
     }
-    
-    packaging {
-        jniLibs { useLegacyPackaging = true }
-        resources { excludes += listOf("META-INF/AL2.0", "META-INF/LGPL2.1", "META-INF/*.kotlin_module") }
-    }
-    
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
-        isCoreLibraryDesugaringEnabled = true
     }
-    
-    tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
-        compilerOptions { jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17) }
-    }
-    
+    kotlinOptions { jvmTarget = "17" }
     buildFeatures { compose = true }
+    composeOptions { kotlinCompilerExtensionVersion = "1.5.11" }
 }
 
 dependencies {
-    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
-    implementation("androidx.core:core-ktx:1.15.0")
-    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
-    implementation("androidx.activity:activity-compose:1.9.3")
+    val composeBom = platform("androidx.compose:compose-bom:20240401")
+    implementation(composeBom)
     
-    implementation("androidx.compose.ui:ui:1.7.5")
-    implementation("androidx.compose.ui:ui-graphics:1.7.5")
-    implementation("androidx.compose.ui:ui-tooling-preview:1.7.5")
-    implementation("androidx.compose.material3:material3:1.3.1")
+    implementation("androidx.core:core-ktx:1.13.1")
+    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.0")
+    implementation("androidx.activity:activity-compose:1.9.0")
+    implementation("androidx.compose.ui:ui")
+    implementation("androidx.compose.ui:ui-graphics")
+    implementation("androidx.compose.material3:material3")
     
-    // CameraX Full Suite
-    implementation("androidx.camera:camera-core:1.4.1")
-    implementation("androidx.camera:camera-camera2:1.4.1")
-    implementation("androidx.camera:camera-lifecycle:1.4.1")
-    implementation("androidx.camera:camera-video:1.4.1")
-    implementation("androidx.camera:camera-view:1.4.1")
-    implementation("androidx.camera:camera-extensions:1.4.1")
-    implementation("androidx.camera:camera-viewfinder-compose:1.0.0-alpha02")
+    // CameraX
+    val cameraxVersion = "1.4.0-beta02"
+    implementation("androidx.camera:camera-core:$cameraxVersion")
+    implementation("androidx.camera:camera-camera2:$cameraxVersion")
+    implementation("androidx.camera:camera-lifecycle:$cameraxVersion")
+    implementation("androidx.camera:camera-video:$cameraxVersion")
+    implementation("androidx.camera:camera-view:$cameraxVersion")
     
-    // Navigation for mode switching
-    implementation("androidx.navigation:navigation-compose:2.8.4")
-    
-    testImplementation("junit:junit:4.13.2")
-    androidTestImplementation("androidx.test.ext:junit:1.2.1")
-    androidTestImplementation("androidx.test.espresso:espresso-core:3.6.1")
-    debugImplementation("androidx.compose.ui:ui-tooling:1.7.5")
-    implementation("io.coil-kt:coil-compose:2.7.0")
-    implementation("com.google.mlkit:face-detection:16.1.7")
+    // Coroutines & Play Services (CRITICAL for ML Kit .await())
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.8.1")
-    implementation("androidx.datastore:datastore-preferences:1.1.1")
-    implementation("io.coil-kt:coil-compose:2.7.0")
+    
+    // ML Kit & DataStore
     implementation("com.google.mlkit:face-detection:16.1.7")
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.8.1")
     implementation("androidx.datastore:datastore-preferences:1.1.1")
+    
+    debugImplementation("androidx.compose.ui:ui-tooling")
 }

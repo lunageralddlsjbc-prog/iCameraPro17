@@ -23,34 +23,19 @@ import java.io.File
 @Composable
 fun GalleryThumbnail(lastMediaPath: String?, modifier: Modifier = Modifier) {
     val context = LocalContext.current
-    
     Card(
-        modifier = modifier
-            .size(60.dp)
-            .clip(RoundedCornerShape(8.dp))
-            .clickable {
-                lastMediaPath?.let { path ->
-                    val file = File(path)
-                    if (file.exists()) {
-                        // FIXED: Open the specific last photo, not the whole gallery
-                        val uri = Uri.fromFile(file)
-                        val intent = Intent(Intent.ACTION_VIEW).apply {
-                            setDataAndType(uri, if (path.endsWith(".mp4")) "video/mp4" else "image/jpeg")
-                            flags = Intent.FLAG_ACTIVITY_NEW_TASK
-                        }
-                        context.startActivity(intent)
-                    } else {
-                        // Fallback: open gallery app if no photo yet
-                        val galleryIntent = Intent(Intent.ACTION_MAIN).apply {
-                            addCategory(Intent.CATEGORY_APP_GALLERY)
-                            flags = Intent.FLAG_ACTIVITY_NEW_TASK
-                        }
-                        if (galleryIntent.resolveActivity(context.packageManager) != null) {
-                            context.startActivity(galleryIntent)
-                        }
+        modifier = modifier.size(60.dp).clip(RoundedCornerShape(8.dp)).clickable {
+            if (lastMediaPath != null) {
+                val file = File(lastMediaPath)
+                if (file.exists()) {
+                    val intent = Intent(Intent.ACTION_VIEW).apply {
+                        setDataAndType(Uri.fromFile(file), "image/*")
+                        flags = Intent.FLAG_ACTIVITY_NEW_TASK
                     }
+                    context.startActivity(intent)
                 }
-            },
+            }
+        },
         colors = CardDefaults.cardColors(containerColor = Color.DarkGray)
     ) {
         Box(modifier = Modifier.size(60.dp).background(Color.Black), contentAlignment = Alignment.Center) {
